@@ -1,0 +1,27 @@
+workflows:
+  ios-ipad-unsigned-ipa:
+    name: Build iPad .ipa (per Sideloadly / AltStore)
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Genera progetto Xcode iOS e installa dipendenze
+        script: |
+          flutter create . --platforms=ios --org com.smartink --project-name smart_ink_notebook
+          flutter pub get
+      - name: Configura iOS 15.5 per ML Kit e 120Hz ProMotion
+        script: |
+          /usr/libexec/PlistBuddy -c "Add :CADisableMinimumFrameDurationOnPhone bool true" ios/Runner/Info.plist || true
+          sed -i '' "s/# platform :ios, .*/platform :ios, '15.5'/g" ios/Podfile
+          sed -i '' "s/platform :ios, .*/platform :ios, '15.5'/g" ios/Podfile
+      - name: Compila iOS Release e crea SmartInkNotebook.ipa
+        script: |
+          flutter build ios --release --no-codesign
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r -9 SmartInkNotebook.ipa Payload
+    artifacts:
+      - SmartInkNotebook.ipa

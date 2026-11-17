@@ -1,0 +1,79 @@
+name: Build iPad iOS App (.ipa)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build_ios_ipa:
+    name: Compila SmartInkNotebook.ipa per iPad (macOS Cloud)
+    runs-on: macos-14
+
+    steps:
+      - name: 1. Scarica il codice sorgente
+        uses: actions/checkout@v4
+
+      - name: 2. Installa Flutter SDK (Stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: 3. Genera struttura nativa Xcode iOS (iPad Universal)
+        run: |
+          flutter create . --platforms=ios --org com.smartink --project-name smart_ink_notebook
+
+      - name: 4. Configura iOS 15.5 (richiesto da ML Kit) e 120Hz ProMotion per Apple Pencil
+        run: |
+          # Abilita 120Hz ProMotion su iPad Pro in Info.plist
+          /usr/libexec/PlistBuddy -c "Add :CADisableMinimumFrameDurationOnPhone bool true" ios/Runner/Info.plist || true
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'Smart Ink A4'" ios/Runner/Info.plist || true
+
+          # Assicura che il Podfile esista e imposti iOS 15.5 come target minimo per Google ML Kit
+          flutter pub get
+          if [ -f "ios/Podfile" ]; then
+            sed -i '' "s/# platform :ios, '12.0'/platform :ios, '15.5'/g" ios/Podfile
+            sed -i '' "s/platform :ios, '12.0'/platform :ios, '15.5'/g" ios/Podfile
+            sed -i '' "s/platform :ios, '13.0'/platform :ios, '15.5'/g" ios/Podfile
+          fi
+
+          # Forza IPHONEOS_DEPLOYMENT_TARGET = 15.5 su tutti i pod
+          cat << 'EOF' >> ios/Podfile
+
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
+              target.build_configurations.each do |config|
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
+              end
+            end
+          end
+          EOF
+          # Rimuove eventuale post_install duplicato standard se presente
+          python3 -c '
+          with open("ios/Podfile", "r") as f:
+              content = f.read()
+          parts = content.split("post_install do |installer|")
+          if len(parts) > 2:
+              content = parts[0] + "post_install do |installer|" + parts[-1]
+              with open("ios/Podfile", "w") as f:
+                  f.write(content)
+          '
+
+      - name: 5. Compila App iOS Release (senza firma per Sideloadly / AltStore)
+        run: |
+          flutter build ios --release --no-codesign
+
+      - name: 6. Crea pacchetto installabile SmartInkNotebook.ipa
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r -9 SmartInkNotebook.ipa Payload
+
+      - name: 7. Carica SmartInkNotebook.ipa pronto per il download
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartInkNotebook-iPad-IPA
+          path: SmartInkNotebook.ipa
+          retention-days: 30

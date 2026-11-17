@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <!-- Tag nativi iPadOS per installazione su Schermata Home a tutto schermo -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Smart Ink A4" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Smart Ink Notebook — App iPad & Android</title>
+  <style>
+    :root {
+      --bg: #f1f5f9;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --text: #1e293b;
+      --muted: #64748b;
+      --a4-width: 595px;
+      --a4-height: 842px;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    /* Toolbar con altezza fissa: non cambia MAI dimensione durante la scrittura */
+    .toolbar {
+      height: 54px;
+      min-height: 54px;
+      max-height: 54px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+      z-index: 20;
+    }
+
+    .btn, .chip, select {
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      color: var(--text);
+      padding: 7px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover, .chip:hover {
+      background: #e2e8f0;
+    }
+
+    .chip.active {
+      background: #dbeafe;
+      border-color: var(--primary);
+      color: var(--primary-dark);
+      font-weight: 600;
+    }
+
+    .btn.primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .divider {
+      width: 1px;
+      height: 26px;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    .color-dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      flex-shrink: 0;
+    }
+
+    .color-dot.active {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+    /* Status Pill flottante (non sposta la toolbar né il foglio) */
+    .ocr-status {
+      position: fixed;
+      top: 64px;
+      right: 16px;
+      z-index: 30;
+      pointer-events: none;
+      font-size: 12.5px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: var(--primary-dark);
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      opacity: 0;
+      transform: translateY(-4px);
+      transition: opacity 0.15s ease, transform 0.15s ease;
+    }
+
+    .ocr-status.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Viewport A4 con supporto Pinch-to-Zoom e Palm Rejection */
+    .workspace {
+      flex: 1;
+      overflow: auto;
+      touch-action: none;
+      overscroll-behavior: none;
+      padding: 28px 24px 80px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .zoom-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transform-origin: top left;
+    }
+
+    .a4-page {
+      width: var(--a4-width);
+      height: var(--a4-height);
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 6px 20px rgba(15, 23, 42, 0.12);
+      position: relative;
+      flex-shrink: 0;
+      touch-action: none;
+    }
+
+    .a4-page canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    .page-footer {
+      position: absolute;
+      bottom: 8px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 11px;
+      color: #94a3b8;
+      pointer-events: none;
+    }
+
+    /* Pull-Up & Hold Ring Unlock Zone */
+    .unlock-zone {
+      width: var(--a4-width);
+      padding: 22px 16px;
+      border: 2px dashed #cbd5e1;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.65);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      cursor: grab;
+      touch-action: none;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .unlock-zone.holding {
+      background: #eff6ff;
+      border-color: var(--primary);
+    }
+
+    .unlock-zone .hint {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 500;
+      text-align: center;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+        height: auto;
+        overflow: visible;
+      }
+      .toolbar, .unlock-zone {
+        display: none !important;
+      }
+      .workspace {
+        padding: 0;
+        gap: 0;
+        overflow: visible;
+      }
+      .a4-page {
+        box-shadow: none;
+        page-break-after: always;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="toolbar">
+    <button class="chip active" data-tool="pen">✏️ Penna</button>
+    <button class="chip" data-tool="highlighter">🖍️ Evidenz.</button>
+    <button class="chip" data-tool="eraser">🧹 Gomma</button>
+    <button class="chip" data-tool="shape">📐 Forme</button>
+
+    <select id="shapeKindSelect" style="display:none;">
+      <option value="rectangle">Rettangolo</option>
+      <option value="circle">Cerchio</option>
+      <option value="line">Linea</option>
+      <option value="arrow">Freccia</option>
+    </select>
+
+    <div class="divider"></div>
+
+    <div class="color-dot active" data-color="#1e293b" style="background:#1e293b;"></div>
+    <div class="color-dot" data-color="#2563eb" style="background:#2563eb;"></div>
+    <div class="color-dot" data-color="#dc2626" style="background:#dc2626;"></div>
+    <div class="color-dot" data-color="#16a34a" style="background:#16a34a;"></div>
+
+    <div class="divider"></div>
+
+    <button class="chip active" id="toggleAutoOcrBtn">✨ Auto-Testo: ON</button>
+    <button class="chip" id="togglePenOnlyBtn" title="Se attivo, scrive solo con Apple Pencil e usa le dita per scorrere">🖐️ Scrivi: Penna + Dito</button>
+
+    <select id="sizeModeSelect" title="Modalità Dimensione Testo Convertito">
+      <option value="adaptiveSnap">Dim. 1: Auto-Snap a Stili (Titolo/Corpo)</option>
+      <option value="fixedFromToolbar">Dim. 2: Fissa da Toolbar</option>
+    </select>
+
+    <select id="fixedFontSizeSelect" style="display:none;">
+      <option value="10">10 pt</option>
+      <option value="12">12 pt</option>
+      <option value="14" selected>14 pt</option>
+      <option value="18">18 pt</option>
+      <option value="24">24 pt</option>
+      <option value="28">28 pt</option>
+    </select>
+
+    <div class="divider"></div>
+
+    <button class="btn" id="zoomOutBtn" title="Riduci zoom">➖</button>
+    <button class="btn" id="zoomResetBtn" title="Ripristina zoom 100%">100%</button>
+    <button class="btn" id="zoomInBtn" title="Ingrandisci zoom">➕</button>
+
+    <div class="divider"></div>
+
+    <button class="btn" id="undoBtn">↩️ Undo</button>
+    <select id="bgTemplateSelect">
+      <option value="ruled">Foglio a Righe</option>
+      <option value="grid">Foglio a Quadretti</option>
+      <option value="dotted">Foglio Puntinato</option>
+      <option value="blank">Foglio Bianco</option>
+    </select>
+
+    <button class="btn primary" onclick="window.print()">📄 Stampa / PDF A4</button>
+  </div>
+
+  <!-- Indicatore flottante: non altera MAI la barra degli strumenti -->
+  <span class="ocr-status" id="ocrTimerBadge">⏳ Conversione tra <span id="ocrCountdown">1.2</span>s...</span>
+
+  <div class="workspace" id="workspace">
+    <div id="zoomSizer" style="position: relative; flex-shrink: 0;">
+      <div class="zoom-stage" id="zoomStage">
+        <div id="pagesContainer"></div>
+
+        <!-- Zona Sblocco Pagina Successiva: Trascina verso l'alto e tieni premuto -->
+        <div class="unlock-zone" id="unlockZone" style="margin-top: 24px;">
+          <canvas id="ringCanvas" width="58" height="58"></canvas>
+          <div class="hint" id="unlockHint">
+            ⬆️ Trascina verso l'alto qui e <b>tieni premuto</b> per caricare la circonferenza e sbloccare la Pagina 2
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const A4_WIDTH = 595;
+    const A4_HEIGHT = 842;
+
+    let activeTool = 'pen';
+    let activeColor = '#1e293b';
+    let autoOcrEnabled = true;
+    let penOnlyMode = false;
+    let sizeMode = 'adaptiveSnap';
+    let fixedFontSize = 14;
+    let bgTemplate = 'ruled';
+    let zoomLevel = 1.0;
+
+    // Stato Apple Pencil & Palm Rejection
+    let activePenPointerId = null;
+    let lastPenActivityTime = 0;
+
+    // Stato Pagine e Storico Comandi (Undo)
+    const pages = [{ index: 0, elements: [] }];
+    const undoStack = [];
+
+    // Buffer Tratti in attesa di conversione
+    let pendingStrokes = [];
+    let pendingPageIndex = null;
+    let ocrTimer = null;
+    let countdownInterval = null;
+
+    const workspace = document.getElementById('workspace');
+    const zoomSizer = document.getElementById('zoomSizer');
+    const zoomStage = document.getElementById('zoomStage');
+    const zoomResetBtn = document.getElementById('zoomResetBtn');
+    const pagesContainer = document.getElementById('pagesContainer');
+    const ocrBadge = document.getElementById('ocrTimerBadge');
+    const ocrCountdownEl = document.getElementById('ocrCountdown');
+
+    function updateZoomLayout() {
+      zoomStage.style.transform = `scale(${zoomLevel})`;
+      const unscaledHeight = zoomStage.scrollHeight || (pages.length * (A4_HEIGHT + 24) + 140);
+      zoomSizer.style.width = `${Math.round(A4_WIDTH * zoomLevel)}px`;
+      zoomSizer.style.height = `${Math.round(unscaledHeight * zoomLevel)}px`;
+      zoomResetBtn.textContent = `${Math.round(zoomLevel * 100)}%`;
+    }
+
+    function setZoom(newZoom, anchorClientX = null, anchorClientY = null) {
+      const clamped = Math.min(3.0, Math.max(0.5, newZoom));
+      if (Math.abs(clamped - zoomLevel) < 0.001) return;
+
+      const wsRect = workspace.getBoundingClientRect();
+      const focusX = anchorClientX !== null ? (anchorClientX - wsRect.left) : wsRect.width / 2;
+      const focusY = anchorClientY !== null ? (anchorClientY - wsRect.top) : wsRect.height / 2;
+
+      const contentX = (workspace.scrollLeft + focusX) / zoomLevel;
+      const contentY = (workspace.scrollTop + focusY) / zoomLevel;
+
+      zoomLevel = clamped;
+      updateZoomLayout();
+
+      workspace.scrollLeft = contentX * zoomLevel - focusX;
+      workspace.scrollTop = contentY * zoomLevel - focusY;
+    }
+
+    function snapHeightToStyle(h) {
+      if (h < 14) return 10;
+      if (h <= 24) return 14;
+      if (h <= 36) return 20;
+      return 28;
+    }
+
+    function renderAllPages() {
+      pagesContainer.innerHTML = '';
+      pages.forEach((page, idx) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'a4-page';
+        if (idx > 0) wrapper.style.marginTop = '24px';
+
+        const canvas = document.createElement('canvas');
+        canvas.width = A4_WIDTH;
+        canvas.height = A4_HEIGHT;
+        wrapper.appendChild(canvas);
+
+        const footer = document.createElement('div');
+        footer.className = 'page-footer';
+        footer.textContent = `Pagina ${idx + 1} di ${pages.length} — Formato A4 (595 × 842 pt)`;
+        wrapper.appendChild(footer);
+
+        pagesContainer.appendChild(wrapper);
+        attachCanvasEvents(canvas, page);
+        drawPageCanvas(canvas.getContext('2d'), page);
+      });
+
+      document.getElementById('unlockHint').innerHTML =
+        `⬆️ Trascina verso l'alto qui e <b>tieni premuto</b> per caricare la circonferenza e sbloccare la Pagina ${pages.length + 1}`;
+      updateZoomLayout();
+    }
+
+    function drawPageCanvas(ctx, page, previewFn) {
+      ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
+
+      // 1. Sfondo
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 0.8;
+      if (bgTemplate === 'ruled') {
+        ctx.strokeStyle = 'rgba(252, 165, 165, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(52, 0);
+        ctx.lineTo(52, A4_HEIGHT);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#e2e8f0';
+        for (let y = 56; y <= A4_HEIGHT - 42; y += 24) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(A4_WIDTH, y);
+          ctx.stroke();
+        }
+      } else if (bgTemplate === 'grid') {
+        for (let x = 14.17; x < A4_WIDTH; x += 14.17) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, A4_HEIGHT); ctx.stroke();
+        }
+        for (let y = 14.17; y < A4_HEIGHT; y += 14.17) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(A4_WIDTH, y); ctx.stroke();
+        }
+      } else if (bgTemplate === 'dotted') {
+        ctx.fillStyle = '#cbd5e1';
+        for (let y = 56; y <= A4_HEIGHT - 42; y += 18) {
+          for (let x = 24; x <= A4_WIDTH - 24; x += 18) {
+            ctx.beginPath(); ctx.arc(x, y, 1.1, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+      }
+
+      // 2. Elementi
+      page.elements.forEach(el => {
+        if (el.type === 'stroke') {
+          ctx.save();
+          ctx.strokeStyle = el.color;
+          ctx.lineWidth = el.isHighlighter ? 14 : 2.5;
+          ctx.lineCap = el.isHighlighter ? 'square' : 'round';
+          ctx.lineJoin = 'round';
+          if (el.isHighlighter) ctx.globalAlpha = 0.35;
+          ctx.beginPath();
+          el.points.forEach((p, i) => {
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          });
+          ctx.stroke();
+          ctx.restore();
+        } else if (el.type === 'shape') {
+          drawShapeOnCtx(ctx, el.kind, el.start, el.end, el.color);
+        } else if (el.type === 'text') {
+          ctx.save();
+          ctx.fillStyle = el.color;
+          ctx.font = `500 ${el.fontSize}px Inter, Roboto, sans-serif`;
+          ctx.textBaseline = 'top';
+          const lines = el.text.split('\n');
+          lines.forEach((line, i) => {
+            ctx.fillText(line, el.x, el.y + i * (el.fontSize * 1.35));
+          });
+          ctx.restore();
+        }
+      });
+
+      if (previewFn) previewFn(ctx);
+    }
+
+    function drawShapeOnCtx(ctx, kind, start, end, color) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      if (kind === 'rectangle') {
+        ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
+      } else if (kind === 'circle') {
+        const rx = Math.abs(end.x - start.x) / 2;
+        const ry = Math.abs(end.y - start.y) / 2;
+        const cx = (start.x + end.x) / 2;
+        const cy = (start.y + end.y) / 2;
+        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (kind === 'line' || kind === 'arrow') {
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(end.x, end.y);
+        if (kind === 'arrow') {
+          const angle = Math.atan2(end.y - start.y, end.x - start.x);
+          ctx.moveTo(end.x, end.y);
+          ctx.lineTo(end.x - 12 * Math.cos(angle - 0.5), end.y - 12 * Math.sin(angle - 0.5));
+          ctx.moveTo(end.x, end.y);
+          ctx.lineTo(end.x - 12 * Math.cos(angle + 0.5), end.y - 12 * Math.sin(angle + 0.5));
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function getBoundingBox(points) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      let pathLen = 0;
+      points.forEach((p, i) => {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+        if (i > 0) {
+          pathLen += Math.hypot(p.x - points[i - 1].x, p.y - points[i - 1].y);
+        }
+      });
+      return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY, pathLen };
+    }
+
+    // Rileva se un evento touch è probabilmente il palmo della mano appoggiato sullo schermo
+    function isProbablePalm(pointerEvent) {
+      if (pointerEvent.pointerType !== 'touch') return false;
+      return (pointerEvent.width && pointerEvent.width > 24) ||
+             (pointerEvent.height && pointerEvent.height > 24);
+    }
+
+    // Mappa le coordinate schermo nello spazio logico A4 (595 x 842) indipendentemente dallo Zoom
+    function getScaledCanvasPoint(canvas, e, t) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left) * (A4_WIDTH / rect.width),
+        y: (e.clientY - rect.top) * (A4_HEIGHT / rect.height),
+        t
+      };
+    }
+
+    // Registro globale dei tocchi attivi per gestire Pinch-to-Zoom (2 dita) e Scroll (1 dito)
+    let isMultiTouchGesturing = false;
+    let activeDrawingCanceller = null;
+
+    function attachCanvasEvents(canvas, page) {
+      const ctx = canvas.getContext('2d');
+      let isDown = false;
+      let activeDrawPointerId = null;
+      let currentPoints = [];
+      let strokeStartTime = 0;
+
+      function cancelCurrentStroke() {
+        if (!isDown) return;
+        isDown = false;
+        activeDrawPointerId = null;
+        currentPoints = [];
+        drawPageCanvas(ctx, page);
+      }
+
+      canvas.addEventListener('pointerdown', e => {
+        // 1. Se è attivo il Pinch-to-Zoom a 2 dita, non disegnare
+        if (isMultiTouchGesturing) return;
+
+        // 2. Gestione Apple Pencil & Palm Rejection:
+        if (e.pointerType === 'pen') {
+          activePenPointerId = e.pointerId;
+          lastPenActivityTime = Date.now();
+        } else if (e.pointerType === 'touch') {
+          // In modalità "Solo Apple Pencil", il dito non deve MAI disegnare
+          if (penOnlyMode) return;
+          // Se stai poggiando il palmo o scrivendo con la penna, ignora il tocco
+          if (activePenPointerId !== null || (Date.now() - lastPenActivityTime < 450) || isProbablePalm(e)) {
+            return;
+          }
+        }
+
+        isDown = true;
+        activeDrawPointerId = e.pointerId;
+        activeDrawingCanceller = cancelCurrentStroke;
+        strokeStartTime = Date.now();
+        try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+
+        const pt = getScaledCanvasPoint(canvas, e, 0);
+        currentPoints = [pt];
+
+        // Se l'utente appoggia la penna, il timer di conversione si ferma subito!
+        clearTimeout(ocrTimer);
+        clearInterval(countdownInterval);
+        ocrBadge.classList.remove('visible');
+      });
+
+      canvas.addEventListener('pointermove', e => {
+        if (!isDown || e.pointerId !== activeDrawPointerId || isMultiTouchGesturing) return;
+        if (e.pointerType === 'pen') lastPenActivityTime = Date.now();
+
+        const pt = getScaledCanvasPoint(canvas, e, Date.now() - strokeStartTime);
+        currentPoints.push(pt);
+
+        if (activeTool === 'eraser') {
+          page.elements = page.elements.filter(el => {
+            if (el.type === 'stroke') {
+              return !el.points.some(p => Math.hypot(p.x - pt.x, p.y - pt.y) < 15);
+            }
+            if (el.type === 'text') {
+              return !(pt.x >= el.x && pt.x <= el.x + 180 && pt.y >= el.y && pt.y <= el.y + el.fontSize * 2);
+            }
+            return true;
+          });
+          drawPageCanvas(ctx, page);
+        } else if (activeTool === 'shape') {
+          const kind = document.getElementById('shapeKindSelect').value;
+          drawPageCanvas(ctx, page, c => drawShapeOnCtx(c, kind, currentPoints[0], pt, activeColor));
+        } else {
+          drawPageCanvas(ctx, page, c => {
+            c.save();
+            c.strokeStyle = activeColor;
+            c.lineWidth = activeTool === 'highlighter' ? 14 : 2.5;
+            c.lineCap = 'round';
+            if (activeTool === 'highlighter') c.globalAlpha = 0.35;
+            c.beginPath();
+            currentPoints.forEach((p, i) => i === 0 ? c.moveTo(p.x, p.y) : c.lineTo(p.x, p.y));
+            c.stroke();
+            c.restore();
+          });
+        }
+      });
+
+      function finishPointer(e) {
+        if (e.pointerType === 'pen' && e.pointerId === activePenPointerId) {
+          activePenPointerId = null;
+          lastPenActivityTime = Date.now();
+        }
+        if (!isDown || e.pointerId !== activeDrawPointerId) return;
+        isDown = false;
+        activeDrawPointerId = null;
+        if (activeDrawingCanceller === cancelCurrentStroke) {
+          activeDrawingCanceller = null;
+        }
+        if (currentPoints.length < 2) {
+          drawPageCanvas(ctx, page);
+          return;
+        }
+
+        if (activeTool === 'pen' || activeTool === 'highlighter') {
+          const box = getBoundingBox(currentPoints);
+          const stroke = {
+            id: 's_' + Date.now() + '_' + Math.random(),
+            type: 'stroke',
+            color: activeColor,
+            isHighlighter: activeTool === 'highlighter',
+            points: currentPoints,
+            box
+          };
+          page.elements.push(stroke);
+          undoStack.push({ type: 'add', pageIndex: page.index, elementId: stroke.id });
+          drawPageCanvas(ctx, page);
+
+          if (activeTool === 'pen' && autoOcrEnabled) {
+            pendingPageIndex = page.index;
+            pendingStrokes.push(stroke);
+            startOcrDebounceTimer(ctx, page);
+          }
+        } else if (activeTool === 'shape') {
+          const kind = document.getElementById('shapeKindSelect').value;
+          const shapeEl = {
+            id: 'sh_' + Date.now(),
+            type: 'shape',
+            kind,
+            color: activeColor,
+            start: currentPoints[0],
+            end: currentPoints[currentPoints.length - 1]
+          };
+          page.elements.push(shapeEl);
+          undoStack.push({ type: 'add', pageIndex: page.index, elementId: shapeEl.id });
+          drawPageCanvas(ctx, page);
+        }
+      }
+
+      canvas.addEventListener('pointerup', finishPointer);
+      canvas.addEventListener('pointercancel', cancelCurrentStroke);
+    }
+
+    // -------------------------------------------------------------------------
+    // Motore Gesture Workspace:
+    // - Blocca lo scroll/zoom nativo di Safari quando si usa Apple Pencil
+    // - 2 Dita: Pinch-to-Zoom fluido + Pan (funziona in TUTTE le modalità)
+    // - 1 Dito (in modalità "Solo Apple Pencil"): Scorrimento fluido del foglio
+    //   con protezione automatica contro il palmo appoggiato sullo schermo!
+    // -------------------------------------------------------------------------
+    const activeTouches = new Map();
+    let pinchStartDist = 0;
+    let pinchStartZoom = 1.0;
+    let lastPanCenter = null;
+
+    // Previene che iPadOS Safari trasformi il tratto dell'Apple Pencil in scroll o selezione
+    workspace.addEventListener('touchstart', e => {
+      const hasStylus = Array.from(e.touches).some(t => t.touchType === 'stylus');
+      if (hasStylus || e.touches.length >= 2 || penOnlyMode) {
+        if (e.target && !e.target.closest('select, button, input')) {
+          e.preventDefault();
+        }
+      }
+    }, { passive: false });
+
+    workspace.addEventListener('touchmove', e => {
+      const hasStylus = Array.from(e.touches).some(t => t.touchType === 'stylus');
+      if (hasStylus || e.touches.length >= 2 || penOnlyMode) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    workspace.addEventListener('pointerdown', e => {
+      if (e.pointerType !== 'touch') return;
+      // Ignora il contatto largo del palmo della mano o se la penna sta scrivendo
+      if (isProbablePalm(e) || activePenPointerId !== null || (Date.now() - lastPenActivityTime < 400)) {
+        return;
+      }
+      // Non interferire con il gesto Pull-Up & Hold nella zona sblocco pagina
+      if (e.target && e.target.closest('#unlockZone')) return;
+
+      activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (activeTouches.size === 2) {
+        // Entriamo in Pinch-to-Zoom a 2 dita: annulliamo eventuale puntino accidentale del 1° dito
+        isMultiTouchGesturing = true;
+        if (activeDrawingCanceller) activeDrawingCanceller();
+
+        const pts = Array.from(activeTouches.values());
+        pinchStartDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) || 1;
+        pinchStartZoom = zoomLevel;
+        lastPanCenter = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      } else if (activeTouches.size === 1 && penOnlyMode) {
+        lastPanCenter = { x: e.clientX, y: e.clientY };
+      }
+    });
+
+    workspace.addEventListener('pointermove', e => {
+      if (e.pointerType !== 'touch' || !activeTouches.has(e.pointerId)) return;
+      activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (activeTouches.size === 2) {
+        const pts = Array.from(activeTouches.values());
+        const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) || 1;
+        const center = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+
+        // 1. Pan con le due dita
+        if (lastPanCenter) {
+          workspace.scrollLeft -= (center.x - lastPanCenter.x);
+          workspace.scrollTop -= (center.y - lastPanCenter.y);
+        }
+        lastPanCenter = center;
+
+        // 2. Zoom proporzionale alla distanza tra le due dita
+        const targetZoom = pinchStartZoom * (dist / pinchStartDist);
+        setZoom(targetZoom, center.x, center.y);
+      } else if (activeTouches.size === 1 && penOnlyMode && !isMultiTouchGesturing) {
+        // Scorrimento fluido con 1 dito quando è attivo "Solo Apple Pencil"
+        if (activePenPointerId !== null || (Date.now() - lastPenActivityTime < 400)) return;
+        if (lastPanCenter) {
+          workspace.scrollLeft -= (e.clientX - lastPanCenter.x);
+          workspace.scrollTop -= (e.clientY - lastPanCenter.y);
+        }
+        lastPanCenter = { x: e.clientX, y: e.clientY };
+      }
+    });
+
+    function handleTouchEnd(e) {
+      if (e.pointerType !== 'touch') return;
+      activeTouches.delete(e.pointerId);
+      if (activeTouches.size < 2) {
+        if (activeTouches.size === 1) {
+          const remaining = Array.from(activeTouches.values())[0];
+          lastPanCenter = { x: remaining.x, y: remaining.y };
+        } else {
+          isMultiTouchGesturing = false;
+          lastPanCenter = null;
+        }
+      }
+    }
+
+    workspace.addEventListener('pointerup', handleTouchEnd);
+    workspace.addEventListener('pointercancel', handleTouchEnd);
+
+    function startOcrDebounceTimer(ctx, page) {
+      clearTimeout(ocrTimer);
+      clearInterval(countdownInterval);
+
+      let remainingMs = 1200;
+      ocrCountdownEl.textContent = (remainingMs / 1000).toFixed(1);
+      ocrBadge.classList.add('visible');
+
+      countdownInterval = setInterval(() => {
+        remainingMs = Math.max(0, remainingMs - 100);
+        ocrCountdownEl.textContent = (remainingMs / 1000).toFixed(1);
+      }, 100);
+
+      ocrTimer = setTimeout(() => {
+        clearInterval(countdownInterval);
+        ocrBadge.classList.remove('visible');
+        convertPendingStrokesToText(ctx, page);
+      }, 1200);
+    }
+
+    // Riconoscimento REALE della scrittura a mano tramite tracciati vettoriali (corsivo e stampatello)
+    async function recognizeLineStrokesReal(line, boxWidth, boxHeight) {
+      try {
+        // Formato vettoriale Digital Ink: per ogni tratto [ [x1, x2, ...], [y1, y2, ...], [t1, t2, ...] ]
+        const inkTrace = line.strokes.map(s => {
+          const xs = s.points.map(p => Math.round(p.x));
+          const ys = s.points.map(p => Math.round(p.y));
+          const ts = s.points.map((p, idx) => p.t || idx * 16);
+          return [xs, ys, ts];
+        });
+
+        const payload = {
+          options: 'enable_pre_space',
+          requests: [{
+            writing_guide: {
+              writing_area_width: Math.max(100, Math.round(boxWidth)),
+              writing_area_height: Math.max(50, Math.round(boxHeight))
+            },
+            ink: inkTrace,
+            language: 'it'
+          }]
+        };
+
+        const response = await fetch(
+          'https://inputtools.google.com/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          }
+        );
+
+        const data = await response.json();
+        // Formato risposta: ["SUCCESS", [ [id, ["testo riconosciuto 1", "alternativa 2", ...]] ]]
+        if (data && data[0] === 'SUCCESS' && data[1] && data[1][0] && data[1][0][1]) {
+          const candidates = data[1][0][1];
+          if (candidates.length > 0 && candidates[0].trim().length > 0) {
+            return candidates[0];
+          }
+        }
+      } catch (err) {
+        console.warn('Errore chiamata riconoscimento scrittura:', err);
+      }
+      return '[Testo non riconosciuto - controlla la connessione]';
+    }
+
+    async function convertPendingStrokesToText(ctx, page) {
+      if (pendingStrokes.length === 0) return;
+      const strokes = [...pendingStrokes];
+      pendingStrokes = [];
+
+      // 1. Classificatore Testo vs Figura:
+      // Se è un singolo grande cerchio chiuso o una lunga linea dritta, NON convertirlo!
+      if (strokes.length === 1) {
+        const s = strokes[0];
+        const first = s.points[0];
+        const last = s.points[s.points.length - 1];
+        const startEndDist = Math.hypot(last.x - first.x, last.y - first.y);
+        const diag = Math.hypot(s.box.width, s.box.height);
+        const isLargeCircle = s.box.width > 65 && s.box.height > 65 && startEndDist < diag * 0.3;
+        const isLongLine = startEndDist > 85 && (startEndDist / Math.max(1, s.box.pathLen)) > 0.94;
+        if (isLargeCircle || isLongLine) {
+          return; // Figura rilevata -> resta disegno!
+        }
+      }
+
+      // 2. Raggruppamento in righe (Rilevamento A-Capo \n)
+      const sorted = [...strokes].sort((a, b) => ((a.box.minY + a.box.maxY) / 2) - ((b.box.minY + b.box.maxY) / 2));
+      const lines = [];
+      sorted.forEach(s => {
+        const centerY = (s.box.minY + s.box.maxY) / 2;
+        const match = lines.find(l => Math.abs(l.centerY - centerY) <= Math.max(18, l.height * 0.65));
+        if (match) {
+          match.strokes.push(s);
+          match.minX = Math.min(match.minX, s.box.minX);
+          match.minY = Math.min(match.minY, s.box.minY);
+          match.maxX = Math.max(match.maxX, s.box.maxX);
+          match.maxY = Math.max(match.maxY, s.box.maxY);
+          match.height = match.maxY - match.minY;
+          match.centerY = (match.minY + match.maxY) / 2;
+        } else {
+          lines.push({
+            strokes: [s],
+            minX: s.box.minX,
+            minY: s.box.minY,
+            maxX: s.box.maxX,
+            maxY: s.box.maxY,
+            height: s.box.height,
+            centerY
+          });
+        }
+      });
+
+      lines.sort((a, b) => a.minY - b.minY);
+      // Ordina i tratti da sinistra a destra dentro ogni riga
+      lines.forEach(line => {
+        line.strokes.sort((a, b) => a.box.minX - b.box.minX);
+      });
+
+      const anchorX = Math.min(...lines.map(l => l.minX));
+      const anchorY = Math.min(...lines.map(l => l.minY));
+      const maxLineHeight = Math.max(...lines.map(l => l.height));
+
+      const resolvedFontSize = sizeMode === 'adaptiveSnap'
+        ? snapHeightToStyle(maxLineHeight)
+        : fixedFontSize;
+
+      // Mostra indicatore mentre riconosce riga per riga ciò che hai scritto davvero
+      ocrBadge.classList.add('visible');
+      ocrCountdownEl.textContent = '...';
+
+      const recognizedLines = [];
+      for (let idx = 0; idx < lines.length; idx++) {
+        const line = lines[idx];
+        const indentSpaces = Math.max(0, Math.round((line.minX - anchorX - 18) / 8));
+        const rawRecognized = await recognizeLineStrokesReal(line, A4_WIDTH, A4_HEIGHT);
+        recognizedLines.push(' '.repeat(indentSpaces) + rawRecognized);
+      }
+
+      ocrBadge.classList.remove('visible');
+
+      const textEl = {
+        id: 'txt_' + Date.now(),
+        type: 'text',
+        x: anchorX,
+        y: anchorY,
+        color: strokes[0].color,
+        fontSize: resolvedFontSize,
+        text: recognizedLines.join('\n')
+      };
+
+      const strokeIds = new Set(strokes.map(s => s.id));
+      page.elements = page.elements.filter(el => !strokeIds.has(el.id));
+      page.elements.push(textEl);
+
+      undoStack.push({
+        type: 'convert',
+        pageIndex: page.index,
+        removedStrokes: strokes,
+        addedTextId: textEl.id
+      });
+
+      drawPageCanvas(ctx, page);
+    }
+
+    // Gestione Circonferenza "Pull-Up & Hold" per sblocco Pagina successiva
+    const unlockZone = document.getElementById('unlockZone');
+    const ringCanvas = document.getElementById('ringCanvas');
+    const ringCtx = ringCanvas.getContext('2d');
+    let ringProgress = 0;
+    let holdTimer = null;
+    let dragStartY = null;
+
+    function drawUnlockRing(progress) {
+      ringCtx.clearRect(0, 0, 58, 58);
+      const cx = 29, cy = 29, r = 23;
+
+      // Contorno di base
+      ringCtx.strokeStyle = '#cbd5e1';
+      ringCtx.lineWidth = 3.5;
+      ringCtx.beginPath();
+      ringCtx.arc(cx, cy, r, 0, Math.PI * 2);
+      ringCtx.stroke();
+
+      // Contorno di caricamento progressivo
+      if (progress > 0) {
+        ringCtx.strokeStyle = progress >= 1 ? '#16a34a' : '#2563eb';
+        ringCtx.lineWidth = 4.2;
+        ringCtx.lineCap = 'round';
+        ringCtx.beginPath();
+        ringCtx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+        ringCtx.stroke();
+      }
+
+      // Icona + centrale
+      ringCtx.fillStyle = progress > 0 ? '#2563eb' : '#64748b';
+      ringCtx.font = 'bold 22px sans-serif';
+      ringCtx.textAlign = 'center';
+      ringCtx.textBaseline = 'middle';
+      ringCtx.fillText(progress >= 1 ? '✓' : '+', cx, cy);
+    }
+
+    drawUnlockRing(0);
+
+    unlockZone.addEventListener('pointerdown', e => {
+      dragStartY = e.clientY;
+      unlockZone.setPointerCapture(e.pointerId);
+    });
+
+    unlockZone.addEventListener('pointermove', e => {
+      if (dragStartY === null) return;
+      const pullUpDist = dragStartY - e.clientY;
+      if (pullUpDist >= 15 && !holdTimer) {
+        unlockZone.classList.add('holding');
+        holdTimer = setInterval(() => {
+          ringProgress = Math.min(1, ringProgress + 0.04);
+          drawUnlockRing(ringProgress);
+          if (ringProgress >= 1) {
+            clearInterval(holdTimer);
+            holdTimer = null;
+            dragStartY = null;
+            pages.push({ index: pages.length, elements: [] });
+            undoStack.push({ type: 'addPage' });
+            setTimeout(() => {
+              ringProgress = 0;
+              unlockZone.classList.remove('holding');
+              drawUnlockRing(0);
+              renderAllPages();
+            }, 220);
+          }
+        }, 28);
+      } else if (pullUpDist < 15 && holdTimer) {
+        clearInterval(holdTimer);
+        holdTimer = null;
+        ringProgress = 0;
+        unlockZone.classList.remove('holding');
+        drawUnlockRing(0);
+      }
+    });
+
+    function resetHold() {
+      dragStartY = null;
+      if (holdTimer) {
+        clearInterval(holdTimer);
+        holdTimer = null;
+      }
+      ringProgress = 0;
+      unlockZone.classList.remove('holding');
+      drawUnlockRing(0);
+    }
+
+    unlockZone.addEventListener('pointerup', resetHold);
+    unlockZone.addEventListener('pointercancel', resetHold);
+
+    // Toolbar Controls
+    document.querySelectorAll('[data-tool]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeTool = btn.dataset.tool;
+        document.getElementById('shapeKindSelect').style.display = activeTool === 'shape' ? 'inline-flex' : 'none';
+      });
+    });
+
+    document.querySelectorAll('.color-dot').forEach(dot => {
+      dot.addEventListener('click', () => {
+        document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+        dot.classList.add('active');
+        activeColor = dot.dataset.color;
+      });
+    });
+
+    document.getElementById('toggleAutoOcrBtn').addEventListener('click', e => {
+      autoOcrEnabled = !autoOcrEnabled;
+      e.currentTarget.classList.toggle('active', autoOcrEnabled);
+      e.currentTarget.textContent = autoOcrEnabled ? '✨ Auto-Testo: ON' : '✨ Auto-Testo: OFF';
+    });
+
+    document.getElementById('togglePenOnlyBtn').addEventListener('click', e => {
+      penOnlyMode = !penOnlyMode;
+      e.currentTarget.classList.toggle('active', penOnlyMode);
+      e.currentTarget.textContent = penOnlyMode ? '✏️ Solo Apple Pencil' : '🖐️ Scrivi: Penna + Dito';
+    });
+
+    document.getElementById('zoomOutBtn').addEventListener('click', () => setZoom(zoomLevel - 0.15));
+    document.getElementById('zoomInBtn').addEventListener('click', () => setZoom(zoomLevel + 0.15));
+    zoomResetBtn.addEventListener('click', () => setZoom(1.0));
+
+    document.getElementById('sizeModeSelect').addEventListener('change', e => {
+      sizeMode = e.target.value;
+      document.getElementById('fixedFontSizeSelect').style.display =
+        sizeMode === 'fixedFromToolbar' ? 'inline-flex' : 'none';
+    });
+
+    document.getElementById('fixedFontSizeSelect').addEventListener('change', e => {
+      fixedFontSize = parseInt(e.target.value, 10);
+    });
+
+    document.getElementById('bgTemplateSelect').addEventListener('change', e => {
+      bgTemplate = e.target.value;
+      renderAllPages();
+    });
+
+    document.getElementById('undoBtn').addEventListener('click', () => {
+      const last = undoStack.pop();
+      if (!last) return;
+      if (last.type === 'addPage' && pages.length > 1) {
+        pages.pop();
+      } else if (last.type === 'convert') {
+        const p = pages[last.pageIndex];
+        p.elements = p.elements.filter(el => el.id !== last.addedTextId);
+        p.elements.push(...last.removedStrokes);
+      } else if (last.type === 'add') {
+        const p = pages[last.pageIndex];
+        p.elements = p.elements.filter(el => el.id !== last.elementId);
+      }
+      renderAllPages();
+    });
+
+    renderAllPages();
+  </script>
+</body>
+</html>

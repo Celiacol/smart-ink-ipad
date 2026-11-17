@@ -1,0 +1,2 @@
+model: hydrogen
+subagent: true

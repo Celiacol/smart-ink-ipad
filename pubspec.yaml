@@ -1,0 +1,29 @@
+name: smart_ink_notebook
+description: >-
+  Applicazione universale per iPad e Tablet Android per appunti con penna,
+  fogli A4 paginati pronti per stampa/PDF e conversione automatica
+  scrittura a mano -> testo digitale con mantenimento del layout.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Riconoscimento scrittura a mano offline (corsivo e stampatello) su iOS/iPadOS e Android
+  google_mlkit_digital_ink_recognition: ^0.12.0
+  # Generazione PDF vettoriale in formato A4 standard e stampa nativa (AirPrint / Mopria)
+  pdf: ^3.11.1
+  printing: ^5.13.3
+  # Generazione ID univoci per elementi e pagine
+  uuid: ^4.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
