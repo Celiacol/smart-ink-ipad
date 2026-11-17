@@ -26,40 +26,40 @@ jobs:
 
       - name: 4. Configura iOS 15.5 (richiesto da ML Kit) e 120Hz ProMotion per Apple Pencil
         run: |
-          # Abilita 120Hz ProMotion su iPad Pro in Info.plist
           /usr/libexec/PlistBuddy -c "Add :CADisableMinimumFrameDurationOnPhone bool true" ios/Runner/Info.plist || true
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'Smart Ink A4'" ios/Runner/Info.plist || true
-
-          # Assicura che il Podfile esista e imposti iOS 15.5 come target minimo per Google ML Kit
           flutter pub get
-          if [ -f "ios/Podfile" ]; then
-            sed -i '' "s/# platform :ios, '12.0'/platform :ios, '15.5'/g" ios/Podfile
-            sed -i '' "s/platform :ios, '12.0'/platform :ios, '15.5'/g" ios/Podfile
-            sed -i '' "s/platform :ios, '13.0'/platform :ios, '15.5'/g" ios/Podfile
-          fi
+          python3 - << 'PYEOF'
+          import os, re
 
-          # Forza IPHONEOS_DEPLOYMENT_TARGET = 15.5 su tutti i pod
-          cat << 'EOF' >> ios/Podfile
+          pbxproj = "ios/Runner.xcodeproj/project.pbxproj"
+          if os.path.exists(pbxproj):
+              with open(pbxproj, "r") as f:
+                  txt = f.read()
+              txt = re.sub(r"IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;", "IPHONEOS_DEPLOYMENT_TARGET = 15.5;", txt)
+              with open(pbxproj, "w") as f:
+                  f.write(txt)
 
-          post_install do |installer|
-            installer.pods_project.targets.each do |target|
+          podfile = "ios/Podfile"
+          if os.path.exists(podfile):
+              with open(podfile, "r") as f:
+                  pf = f.read()
+              pf = re.sub(r"#?\s*platform :ios, '[0-9.]+'", "platform :ios, '15.5'", pf)
+              target_hook = """  installer.pods_project.targets.each do |target|
               flutter_additional_ios_build_settings(target)
               target.build_configurations.each do |config|
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
               end
-            end
-          end
-          EOF
-          # Rimuove eventuale post_install duplicato standard se presente
-          python3 -c '
-          with open("ios/Podfile", "r") as f:
-              content = f.read()
-          parts = content.split("post_install do |installer|")
-          if len(parts) > 2:
-              content = parts[0] + "post_install do |installer|" + parts[-1]
-              with open("ios/Podfile", "w") as f:
-                  f.write(content)
-          '
+            end"""
+              pf = re.sub(
+                  r"installer\.pods_project\.targets\.each do \|target\|.*?end",
+                  target_hook,
+                  pf,
+                  flags=re.DOTALL
+              )
+              with open(podfile, "w") as f:
+                  f.write(pf)
+          PYEOF
 
       - name: 5. Compila App iOS Release (senza firma per Sideloadly / AltStore)
         run: |
