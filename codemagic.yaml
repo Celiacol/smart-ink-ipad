@@ -15,8 +15,38 @@ workflows:
       - name: Configura iOS 15.5 per ML Kit e 120Hz ProMotion
         script: |
           /usr/libexec/PlistBuddy -c "Add :CADisableMinimumFrameDurationOnPhone bool true" ios/Runner/Info.plist || true
-          sed -i '' "s/# platform :ios, .*/platform :ios, '15.5'/g" ios/Podfile
-          sed -i '' "s/platform :ios, .*/platform :ios, '15.5'/g" ios/Podfile
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'Smart Ink A4'" ios/Runner/Info.plist || true
+          python3 - << 'PYEOF'
+          import os, re
+
+          pbxproj = "ios/Runner.xcodeproj/project.pbxproj"
+          if os.path.exists(pbxproj):
+              with open(pbxproj, "r") as f:
+                  txt = f.read()
+              txt = re.sub(r"IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;", "IPHONEOS_DEPLOYMENT_TARGET = 15.5;", txt)
+              with open(pbxproj, "w") as f:
+                  f.write(txt)
+
+          podfile = "ios/Podfile"
+          if os.path.exists(podfile):
+              with open(podfile, "r") as f:
+                  pf = f.read()
+              pf = re.sub(r"#?\s*platform :ios, '[0-9.]+'", "platform :ios, '15.5'", pf)
+              target_hook = """  installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
+              target.build_configurations.each do |config|
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
+              end
+            end"""
+              pf = re.sub(
+                  r"installer\.pods_project\.targets\.each do \|target\|.*?end",
+                  target_hook,
+                  pf,
+                  flags=re.DOTALL
+              )
+              with open(podfile, "w") as f:
+                  f.write(pf)
+          PYEOF
       - name: Compila iOS Release e crea SmartInkNotebook.ipa
         script: |
           flutter build ios --release --no-codesign
