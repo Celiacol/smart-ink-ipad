@@ -10,14 +10,14 @@ import 'canvas_tool_handler.dart';
 
 /// Strumento Penna ed Evidenziatore.
 ///
-/// Cattura i punti a 120Hz, disegna l'anteprima fluida in tempo reale,
-/// salva il tratto nel [CommandManager] e notifica [HandwritingOcrService]
-/// per il conto alla rovescia di auto-conversione in testo.
+/// Cattura i punti a 120Hz, disegna l'anteprima fluida in tempo reale e
+/// salva il tratto nel [CommandManager] (senza conversione automatica invasiva
+/// mentre scrivi; la conversione avviene su richiesta tramite `LassoConvertToolHandler`).
 class PenToolHandler implements CanvasToolHandler {
   @override
   final ToolType toolType;
 
-  final HandwritingOcrService ocrService;
+  final HandwritingOcrService? ocrService;
   final Uuid _uuid = const Uuid();
 
   int colorValue;
@@ -27,7 +27,7 @@ class PenToolHandler implements CanvasToolHandler {
   final List<InkPoint> _activePoints = [];
 
   PenToolHandler({
-    required this.ocrService,
+    this.ocrService,
     this.toolType = ToolType.pen,
     this.colorValue = 0xFF1E293B,
     this.strokeWidth = 2.5,
@@ -48,10 +48,6 @@ class PenToolHandler implements CanvasToolHandler {
           timestampMs: event.timestampMs,
         ),
       );
-
-    if (!isHighlighter) {
-      ocrService.onPenDown(event.pageIndex);
-    }
   }
 
   @override
@@ -83,13 +79,8 @@ class PenToolHandler implements CanvasToolHandler {
     _activePoints.clear();
     _activePageIndex = null;
 
-    // 1. Aggiunge il tratto alla pagina tramite il Command Bus
+    // Aggiunge il tratto alla pagina tramite il Command Bus (niente timer automatici)
     commandManager.executeCommand(AddElementCommand(completedStroke));
-
-    // 2. Se è una penna normale (non evidenziatore), avvia il timer di conversione testo
-    if (!isHighlighter) {
-      ocrService.onStrokeCompleted(completedStroke);
-    }
   }
 
   @override

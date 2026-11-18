@@ -119,8 +119,13 @@ class NotebookToolbar extends StatelessWidget {
               type: ToolType.selection,
             ),
             _buildToolButton(
+              icon: Icons.auto_awesome_rounded,
+              label: 'Converti Cerchio',
+              type: ToolType.lassoConvert,
+            ),
+            _buildToolButton(
               icon: Icons.gesture_rounded,
-              label: 'Cerchia Testo',
+              label: 'Compatta Testo',
               type: ToolType.lassoReflow,
             ),
 
@@ -184,23 +189,6 @@ class NotebookToolbar extends StatelessWidget {
               builder: (context, _) {
                 return Row(
                   children: [
-                    FilterChip(
-                      selected: ocrService.autoConvertEnabled,
-                      label: Text(
-                        ocrService.autoConvertEnabled
-                            ? 'Auto-Testo: ON'
-                            : 'Auto-Testo: OFF',
-                      ),
-                      avatar: Icon(
-                        Icons.text_fields_rounded,
-                        size: 18,
-                        color: ocrService.autoConvertEnabled
-                            ? const Color(0xFF1D4ED8)
-                            : const Color(0xFF64748B),
-                      ),
-                      onSelected: ocrService.setAutoConvertEnabled,
-                    ),
-                    const SizedBox(width: 8),
                     FilterChip(
                       selected: ocrService.mergeSameLineEnabled,
                       label: Text(

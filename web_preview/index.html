@@ -314,7 +314,8 @@
     <button class="chip" data-tool="highlighter">🖍️ Evidenz.</button>
     <button class="chip" data-tool="eraser">🧹 Gomma</button>
     <button class="chip" data-tool="shape">📐 Forme</button>
-    <button class="chip" data-tool="lassoReflow" title="Cerchia il testo convertito per compattare tutti gli spazi a spazi da uno">⭕ Cerchia Testo</button>
+    <button class="chip" data-tool="lassoConvert" title="Cerchia la scrittura a mano libera da convertire in testo digitale">✨ Converti Cerchio</button>
+    <button class="chip" data-tool="lassoReflow" title="Cerchia il testo già convertito per compattare gli spazi">⭕ Compatta Testo</button>
 
     <select id="shapeKindSelect" style="display:none;">
       <option value="rectangle">Rettangolo</option>
@@ -332,14 +333,8 @@
 
     <div class="divider"></div>
 
-    <button class="chip active" id="toggleAutoOcrBtn">✨ Auto-Testo: ON</button>
     <button class="chip active" id="toggleMergeLineBtn" title="Se attivo, accorpa con spazio singolo il testo sulla stessa riga e va a capo a fine riga. Disattiva per testo libero separato (es. liste/colonne).">🔗 Accorpa Riga: ON</button>
     <button class="btn" id="openCalibrateBtn" title="Calibra l'app in 3 frasi sulla tua calligrafia (100% locale)">🎯 Calibra</button>
-    <select id="ocrDelaySelect" title="Tempo di attesa dopo aver staccato la penna">
-      <option value="1200">⏱️ 1.2s</option>
-      <option value="1800" selected>⏱️ 1.8s</option>
-      <option value="2500">⏱️ 2.5s</option>
-    </select>
     <button class="chip" id="togglePenOnlyBtn" title="Se attivo, scrive solo con Apple Pencil e usa le dita per scorrere">🖐️ Scrivi: Penna + Dito</button>
 
     <select id="sizeModeSelect" title="Modalità Dimensione Testo Convertito" style="color: #dc2626; font-weight: 600; border-color: #fca5a5;">
@@ -813,49 +808,6 @@
 
         const pt = getScaledCanvasPoint(canvas, e, 0);
         currentPoints = [pt];
-
-        // Controllo continuità tra un tratto e il successivo (pausa breve <= 1.2s = scrittura continua)
-        const nowMs = Date.now();
-        const pauseSinceLastStroke = lastStrokeUpTimeMs > 0 ? (nowMs - lastStrokeUpTimeMs) : Infinity;
-        const isContinuousGesture = pauseSinceLastStroke <= CONTINUOUS_WRAP_PAUSE_MS;
-
-        // Se l'utente cambia riga (va a capo) mentre scrive, accoda subito la riga precedente.
-        // ATTENZIONE: non staccare mai se l'utente sta semplicemente salendo sopra la parola
-        // corrente per mettere l'accento, il puntino sulla 'i' o la sbarra della 't'!
-        if (activeTool === 'pen' && autoOcrEnabled && pendingStrokes.length > 0 && pendingPageIndex === page.index) {
-          const lineBounds = getPendingLineVerticalBounds(pendingStrokes);
-          const pendingBaseline = estimateInkBaselineY(pendingStrokes);
-          const horizontallyOverlapsPending = pendingStrokes.some(
-            s => pt.x >= s.box.minX - 18 && pt.x <= s.box.maxX + 18
-          );
-          const isDiacriticOrTallLetterAbove = horizontallyOverlapsPending && pt.y >= lineBounds.minY - 28 && pt.y <= pendingBaseline + 10;
-          const wentToNewLine = !isDiacriticOrTallLetterAbove && (
-            (pt.y > pendingBaseline + 16 && pt.y > lineBounds.maxY + 6) ||
-            pt.y < lineBounds.minY - 30
-          );
-          if (wentToNewLine) {
-            const batch = [...pendingStrokes];
-            const wasBatchContinuous = pendingBatchIsContinuous;
-            pendingStrokes = [];
-            enqueueOcrBatch(ctx, page, batch, wasBatchContinuous);
-            // Se ha cambiato riga senza pausa (<= 1.2s), la nuova riga continua il flusso della precedente!
-            // Se c'è stata una pausa (> 1.2s), inizia un nuovo paragrafo staccato su questa riga.
-            pendingBatchIsContinuous = isContinuousGesture;
-            if (!isContinuousGesture) {
-              lastFlowTailElementId = null;
-            }
-          }
-        } else if (activeTool === 'pen' && autoOcrEnabled && pendingStrokes.length === 0) {
-          pendingBatchIsContinuous = isContinuousGesture;
-          if (!isContinuousGesture) {
-            lastFlowTailElementId = null;
-          }
-        }
-
-        // Se l'utente appoggia la penna, il timer di conversione si ferma subito!
-        clearTimeout(ocrTimer);
-        clearInterval(countdownInterval);
-        if (!isProcessingOcrQueue) ocrBadge.classList.remove('visible');
       });
 
       canvas.addEventListener('pointermove', e => {
@@ -879,11 +831,12 @@
         } else if (activeTool === 'shape') {
           const kind = document.getElementById('shapeKindSelect').value;
           drawPageCanvas(ctx, page, c => drawShapeOnCtx(c, kind, currentPoints[0], pt, activeColor));
-        } else if (activeTool === 'lassoReflow') {
+        } else if (activeTool === 'lassoConvert' || activeTool === 'lassoReflow') {
+          const isConvert = activeTool === 'lassoConvert';
           drawPageCanvas(ctx, page, c => {
             c.save();
-            c.strokeStyle = '#2563eb';
-            c.fillStyle = 'rgba(37, 99, 235, 0.08)';
+            c.strokeStyle = isConvert ? '#7c3aed' : '#2563eb';
+            c.fillStyle = isConvert ? 'rgba(124, 58, 237, 0.08)' : 'rgba(37, 99, 235, 0.08)';
             c.lineWidth = 2;
             c.setLineDash([6, 4]);
             c.beginPath();
@@ -932,18 +885,13 @@
             color: activeColor,
             isHighlighter: activeTool === 'highlighter',
             points: currentPoints,
+            createdAtMs: strokeStartTime,
+            endedAtMs: Date.now(),
             box
           };
           page.elements.push(stroke);
           undoStack.push({ type: 'add', pageIndex: page.index, elementId: stroke.id });
           drawPageCanvas(ctx, page);
-
-          if (activeTool === 'pen' && autoOcrEnabled) {
-            lastStrokeUpTimeMs = Date.now();
-            pendingPageIndex = page.index;
-            pendingStrokes.push(stroke);
-            startOcrDebounceTimer(ctx, page);
-          }
         } else if (activeTool === 'shape') {
           const kind = document.getElementById('shapeKindSelect').value;
           const shapeEl = {
@@ -956,6 +904,9 @@
           };
           page.elements.push(shapeEl);
           undoStack.push({ type: 'add', pageIndex: page.index, elementId: shapeEl.id });
+          drawPageCanvas(ctx, page);
+        } else if (activeTool === 'lassoConvert') {
+          convertCircledHandwriting(ctx, page, currentPoints);
           drawPageCanvas(ctx, page);
         } else if (activeTool === 'lassoReflow') {
           reflowCircledTexts(ctx, page, currentPoints);
@@ -1541,12 +1492,16 @@
         const lineBaselineRaw = estimateInkBaselineY(line.strokes);
         let targetBaselineY = snapBaselineToPaperLine(lineBaselineRaw, bgTemplate);
 
-        // Verifica se siamo in scrittura CONTINUA da una riga superiore (senza pausa):
-        // - lineIdx > 0 dentro lo stesso batch continuo, OPPURE
-        // - lineIdx === 0 con isContinuousWithPrevious === true
+        // Verifica se siamo in scrittura CONTINUA da una riga superiore (pausa <= 1.2s tra fine riga N e inizio riga N+1):
         let continuousTailElement = null;
-        if (mergeOnSameLineEnabled && (lineIdx > 0 || isContinuousWithPrevious)) {
-          if (lastFlowPageIndex === page.index && lastFlowTailElementId) {
+        if (mergeOnSameLineEnabled && lineIdx > 0) {
+          const prevLine = lines[lineIdx - 1];
+          const prevEndMs = Math.max(...prevLine.strokes.map(s => s.endedAtMs || 0));
+          const currStartMs = Math.min(...line.strokes.map(s => s.createdAtMs || Infinity));
+          const linePauseMs = currStartMs - prevEndMs;
+          const wasContinuous = prevEndMs > 0 && currStartMs < Infinity && linePauseMs <= CONTINUOUS_WRAP_PAUSE_MS;
+
+          if (wasContinuous && lastFlowPageIndex === page.index && lastFlowTailElementId) {
             const candidateTail = page.elements.find(
               el => el.type === 'text' && el.id === lastFlowTailElementId
             );
@@ -1554,7 +1509,6 @@
               const tailBase = candidateTail.baselineY !== undefined
                 ? candidateTail.baselineY
                 : (candidateTail.y + getFontAscent(ctx, candidateTail.fontSize));
-              // Accorpa se la nuova riga continua sullo stesso livello o subito sotto (a capo continuo)
               if (lineBaselineRaw >= tailBase - 14) {
                 continuousTailElement = candidateTail;
                 targetBaselineY = tailBase;
@@ -1861,20 +1815,10 @@
       });
     });
 
-    document.getElementById('toggleAutoOcrBtn').addEventListener('click', e => {
-      autoOcrEnabled = !autoOcrEnabled;
-      e.currentTarget.classList.toggle('active', autoOcrEnabled);
-      e.currentTarget.textContent = autoOcrEnabled ? '✨ Auto-Testo: ON' : '✨ Auto-Testo: OFF';
-    });
-
     document.getElementById('toggleMergeLineBtn').addEventListener('click', e => {
       mergeOnSameLineEnabled = !mergeOnSameLineEnabled;
       e.currentTarget.classList.toggle('active', mergeOnSameLineEnabled);
       e.currentTarget.textContent = mergeOnSameLineEnabled ? '🔗 Accorpa Riga: ON' : '🔗 Accorpa Riga: OFF';
-    });
-
-    document.getElementById('ocrDelaySelect').addEventListener('change', e => {
-      ocrDelayMs = parseInt(e.target.value, 10) || 1800;
     });
 
     document.getElementById('togglePenOnlyBtn').addEventListener('click', e => {
@@ -1933,6 +1877,36 @@
         renderAllPages();
       }
     });
+
+    // Converte i tratti scritti a mano cerchiati dall'utente con "✨ Converti Cerchio"
+    function convertCircledHandwriting(ctx, page, lassoPoints) {
+      if (!lassoPoints || lassoPoints.length < 3) return;
+      const selectedStrokes = [];
+      for (const el of page.elements) {
+        if (el.type !== 'stroke' || el.isHighlighter || !el.points.length) continue;
+        const boxCenterInside = isPointInPolygon(
+          (el.box.minX + el.box.maxX) / 2,
+          (el.box.minY + el.box.maxY) / 2,
+          lassoPoints
+        );
+        if (boxCenterInside) {
+          selectedStrokes.push(el);
+          continue;
+        }
+        let inside = 0, sampled = 0;
+        const step = el.points.length > 20 ? Math.floor(el.points.length / 15) : 1;
+        for (let i = 0; i < el.points.length; i += step) {
+          sampled++;
+          if (isPointInPolygon(el.points[i].x, el.points[i].y, lassoPoints)) inside++;
+        }
+        if (sampled > 0 && inside / sampled >= 0.4) {
+          selectedStrokes.push(el);
+        }
+      }
+      if (selectedStrokes.length > 0) {
+        enqueueOcrBatch(ctx, page, selectedStrokes, false);
+      }
+    }
 
     // Verifica se un punto (px, py) è dentro il poligono tracciato dal lazo (Ray Casting)
     function isPointInPolygon(px, py, polygon) {

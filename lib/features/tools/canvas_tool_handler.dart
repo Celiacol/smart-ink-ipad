@@ -19,6 +19,9 @@ enum ToolType {
   /// Strumento di selezione per spostare elementi o modificare i blocchi di testo.
   selection,
 
+  /// Lazo che cerchia la scrittura a mano per convertirla in testo digitale seguendo tutte le regole di layout.
+  lassoConvert,
+
   /// Lazo che cerchia il testo convertito e compatta tutti gli spazi a spazi singoli.
   lassoReflow,
 }

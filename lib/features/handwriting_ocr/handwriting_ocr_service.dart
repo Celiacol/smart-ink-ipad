@@ -234,6 +234,18 @@ class HandwritingOcrService extends ChangeNotifier {
   // Pipeline di Conversione (Classificazione -> Layout -> ML Kit -> Command)
   // ---------------------------------------------------------------------------
 
+  Future<void> convertSelectedStrokes(
+    int pageIndex,
+    List<StrokeElement> selectedStrokes,
+  ) async {
+    if (selectedStrokes.isEmpty) return;
+    _pendingStrokes.clear();
+    _pendingStrokes.addAll(selectedStrokes);
+    _pendingPageIndex = pageIndex;
+    _pendingBatchIsContinuous = false;
+    await flushAndConvertNow();
+  }
+
   Future<void> flushAndConvertNow() async {
     _inactivityTimer?.cancel();
     _inactivityTimer = null;
@@ -310,10 +322,26 @@ class HandwritingOcrService extends ChangeNotifier {
           _lastAdaptiveFontSize = lineLayout.resolvedFontSize;
         }
 
-        // Controlla se siamo in flusso continuo da una riga superiore (senza pausa > 1.2s)
+        // Controlla se siamo in flusso continuo da una riga superiore (pausa <= 1.2s tra fine riga N e inizio riga N+1)
         TextElement? continuousTail;
-        if (_mergeSameLineEnabled && (lineIdx > 0 || batchIsContinuous)) {
-          if (_lastFlowPageIndex == pageIndex && _lastFlowTailTextId != null) {
+        if (_mergeSameLineEnabled && lineIdx > 0) {
+          final prevLine = initialLayout.lineClusters[lineIdx - 1];
+          final prevEndMs = prevLine.strokes
+              .where((s) => s.points.isNotEmpty)
+              .map((s) => s.points.last.timestampMs)
+              .fold<int>(0, (a, b) => a > b ? a : b);
+          final currStartMs = lineCluster.strokes
+              .where((s) => s.points.isNotEmpty)
+              .map((s) => s.points.first.timestampMs)
+              .fold<int>(0x7fffffff, (a, b) => a < b ? a : b);
+          final linePauseMs = (currStartMs - prevEndMs).abs();
+          final wasContinuous = prevEndMs > 0 &&
+              currStartMs < 0x7fffffff &&
+              linePauseMs <= _continuousWrapPauseMs;
+
+          if (wasContinuous &&
+              _lastFlowPageIndex == pageIndex &&
+              _lastFlowTailTextId != null) {
             for (final el in existingTexts) {
               if (el.id == _lastFlowTailTextId &&
                   lineLayout.anchorY >= el.y - 14.0) {

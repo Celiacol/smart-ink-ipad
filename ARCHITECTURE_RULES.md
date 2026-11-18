@@ -23,17 +23,20 @@ lib/
 │       └── command_manager.dart       # Gestore centrale dello stato e dello storico Undo/Redo
 │
 ├── features/                          # MODULI INDIPENDENTI (Non devono mai importarsi a vicenda)
-│   ├── handwriting_ocr/               # Conversione Scrittura -> Testo + Layout + Timer
+│   ├── handwriting_ocr/               # Conversione Scrittura -> Testo + Layout + Calibrazione
+│   │   ├── handwriting_calibration.dart # Profilo offline 3 frasi + Smart Re-Ranking Top-10
 │   │   ├── ink_intent_classifier.dart # Distingue Testo da Figure/Disegni geometrici
 │   │   ├── spatial_layout_analyzer.dart # Rileva righe, a-capo (\n), indentazione e Font Size
-│   │   └── handwriting_ocr_service.dart # Debounce Timer + Integrazione ML Kit Digital Ink
+│   │   └── handwriting_ocr_service.dart # Pipeline conversione + Accorpa Riga + ML Kit Digital Ink
 │   │
 │   ├── tools/                         # Plugin degli Strumenti di Disegno/Scrittura
 │   │   ├── canvas_tool_handler.dart   # Interfaccia comune per ogni strumento
-│   │   ├── pen_tool_handler.dart      # Penna ed Evidenziatore + alimentazione buffer OCR
+│   │   ├── pen_tool_handler.dart      # Penna ed Evidenziatore (scrittura libera senza interruzioni)
 │   │   ├── eraser_tool_handler.dart   # Gomma (cancella tratti, forme o testi)
 │   │   ├── shape_tool_handler.dart    # Creazione forme geometriche (Rettangolo, Cerchio, Linea, Freccia)
-│   │   └── selection_tool_handler.dart# Selezione, spostamento e modifica testo/elementi
+│   │   ├── selection_tool_handler.dart# Selezione, spostamento e modifica testo/elementi
+│   │   ├── lasso_convert_tool_handler.dart # Cerchia scrittura a mano -> converte in testo digitale
+│   │   └── lasso_reflow_tool_handler.dart  # Cerchia testo convertito -> compatta spazi su righe consecutive
 │   │
 │   ├── canvas_view/                   # Rendering A4, Paginazione e Gesto "Pull-Up & Hold"
 │   │   ├── a4_page_painter.dart       # CustomPainter puro per foglio A4 + sfondi (righe/quadretti)

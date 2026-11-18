@@ -12,6 +12,7 @@ import 'features/pdf_export/pdf_export_service.dart';
 import 'features/toolbar/notebook_toolbar.dart';
 import 'features/tools/canvas_tool_handler.dart';
 import 'features/tools/eraser_tool_handler.dart';
+import 'features/tools/lasso_convert_tool_handler.dart';
 import 'features/tools/lasso_reflow_tool_handler.dart';
 import 'features/tools/pen_tool_handler.dart';
 import 'features/tools/selection_tool_handler.dart';
@@ -64,6 +65,7 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
   late final EraserToolHandler _eraserTool;
   late final ShapeToolHandler _shapeTool;
   late final SelectionToolHandler _selectionTool;
+  late final LassoConvertToolHandler _lassoConvertTool;
   late final LassoReflowToolHandler _lassoReflowTool;
 
   ToolType _activeToolType = ToolType.pen;
@@ -97,6 +99,7 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
     _selectionTool = SelectionToolHandler(
       onTextElementSelected: _showEditConvertedTextDialog,
     );
+    _lassoConvertTool = LassoConvertToolHandler(ocrService: _ocrService);
     _lassoReflowTool = LassoReflowToolHandler();
   }
 
@@ -119,6 +122,8 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
         return _shapeTool;
       case ToolType.selection:
         return _selectionTool;
+      case ToolType.lassoConvert:
+        return _lassoConvertTool;
       case ToolType.lassoReflow:
         return _lassoReflowTool;
     }
