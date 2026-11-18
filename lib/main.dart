@@ -6,11 +6,13 @@ import 'core/constants/page_constants.dart';
 import 'core/models/canvas_element.dart';
 import 'core/models/page_model.dart';
 import 'features/canvas_view/paginated_notebook_view.dart';
+import 'features/handwriting_ocr/handwriting_calibration.dart';
 import 'features/handwriting_ocr/handwriting_ocr_service.dart';
 import 'features/pdf_export/pdf_export_service.dart';
 import 'features/toolbar/notebook_toolbar.dart';
 import 'features/tools/canvas_tool_handler.dart';
 import 'features/tools/eraser_tool_handler.dart';
+import 'features/tools/lasso_reflow_tool_handler.dart';
 import 'features/tools/pen_tool_handler.dart';
 import 'features/tools/selection_tool_handler.dart';
 import 'features/tools/shape_tool_handler.dart';
@@ -62,6 +64,7 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
   late final EraserToolHandler _eraserTool;
   late final ShapeToolHandler _shapeTool;
   late final SelectionToolHandler _selectionTool;
+  late final LassoReflowToolHandler _lassoReflowTool;
 
   ToolType _activeToolType = ToolType.pen;
   int _selectedColorValue = 0xFF1E293B;
@@ -94,6 +97,7 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
     _selectionTool = SelectionToolHandler(
       onTextElementSelected: _showEditConvertedTextDialog,
     );
+    _lassoReflowTool = LassoReflowToolHandler();
   }
 
   @override
@@ -115,6 +119,8 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
         return _shapeTool;
       case ToolType.selection:
         return _selectionTool;
+      case ToolType.lassoReflow:
+        return _lassoReflowTool;
     }
   }
 
@@ -210,6 +216,13 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
                 ),
                 FilledButton(
                   onPressed: () {
+                    // Apprende l'eventuale correzione manuale fatta dall'utente per migliorare i futuri riconoscimenti
+                    if (textController.text.trim() != element.text.trim()) {
+                      _ocrService.learnUserCorrection(
+                        element.text,
+                        textController.text,
+                      );
+                    }
                     final updated = element.copyWith(
                       text: textController.text,
                       fontSize: selectedSize,
@@ -263,6 +276,7 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
                   onAllowFingerDrawingChanged: (val) {
                     setState(() => _allowFingerDrawing = val);
                   },
+                  onCalibrateHandwriting: _showCalibrationDialog,
                   onExportPdf: () => _pdfExportService.printOrShareDocument(
                     _commandManager.state,
                   ),
@@ -281,4 +295,199 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
       ),
     );
   }
+
+  /// Procedura guidata in 3 frasi per calibrare l'app sulla calligrafia dell'utente (100% offline).
+  Future<void> _showCalibrationDialog() async {
+    int phraseIdx = 0;
+    final List<CalibrationSample> collectedSamples = [];
+    final List<StrokeElement> currentStrokes = [];
+    List<InkPoint> activePts = [];
+    int strokeSeq = 0;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final phrase = defaultCalibrationPhrases[phraseIdx];
+            return AlertDialog(
+              title: Text(phrase.title),
+              content: SizedBox(
+                width: 540,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                      ),
+                      child: Text(
+                        phrase.targetText,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1E3A8A),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      phrase.purposeHint,
+                      style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      height: 170,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: const Color(0xFFCBD5E1)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Listener(
+                        onPointerDown: (e) {
+                          activePts = [
+                            InkPoint(
+                              x: e.localPosition.dx,
+                              y: e.localPosition.dy,
+                              timestampMs: e.timeStamp.inMilliseconds,
+                            ),
+                          ];
+                          setDialogState(() {});
+                        },
+                        onPointerMove: (e) {
+                          activePts.add(
+                            InkPoint(
+                              x: e.localPosition.dx,
+                              y: e.localPosition.dy,
+                              timestampMs: e.timeStamp.inMilliseconds,
+                            ),
+                          );
+                          setDialogState(() {});
+                        },
+                        onPointerUp: (_) {
+                          if (activePts.length >= 2) {
+                            currentStrokes.add(
+                              StrokeElement(
+                                id: 'cal_${strokeSeq++}',
+                                pageIndex: 0,
+                                colorValue: 0xFF1E293B,
+                                points: List<InkPoint>.from(activePts),
+                              ),
+                            );
+                          }
+                          activePts = [];
+                          setDialogState(() {});
+                        },
+                        child: CustomPaint(
+                          painter: _CalibrationPadPainter(
+                            strokes: currentStrokes,
+                            activePoints: activePts,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Annulla'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setDialogState(() {
+                      currentStrokes.clear();
+                      activePts = [];
+                    });
+                  },
+                  child: const Text('Pulisci'),
+                ),
+                FilledButton(
+                  onPressed: currentStrokes.isEmpty
+                      ? null
+                      : () async {
+                          collectedSamples.add(
+                            CalibrationSample(
+                              targetText: phrase.targetText,
+                              strokes: List<StrokeElement>.from(currentStrokes),
+                            ),
+                          );
+                          if (phraseIdx < defaultCalibrationPhrases.length - 1) {
+                            setDialogState(() {
+                              phraseIdx++;
+                              currentStrokes.clear();
+                              activePts = [];
+                            });
+                          } else {
+                            await _ocrService
+                                .calibrateFromGuidedSamples(collectedSamples);
+                            if (context.mounted) Navigator.of(context).pop();
+                          }
+                        },
+                  child: Text(
+                    phraseIdx < defaultCalibrationPhrases.length - 1
+                        ? 'Avanti (${phraseIdx + 1}/3)'
+                        : 'Completa Calibrazione',
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _CalibrationPadPainter extends CustomPainter {
+  final List<StrokeElement> strokes;
+  final List<InkPoint> activePoints;
+
+  _CalibrationPadPainter({
+    required this.strokes,
+    required this.activePoints,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final guidePaint = Paint()
+      ..color = const Color(0xFFE2E8F0)
+      ..strokeWidth = 1.0;
+    canvas.drawLine(
+      Offset(0, size.height * 0.68),
+      Offset(size.width, size.height * 0.68),
+      guidePaint,
+    );
+
+    final inkPaint = Paint()
+      ..color = const Color(0xFF1E293B)
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    void drawPts(List<InkPoint> pts) {
+      if (pts.length < 2) return;
+      final path = Path()..moveTo(pts.first.x, pts.first.y);
+      for (int i = 1; i < pts.length; i++) {
+        path.lineTo(pts[i].x, pts[i].y);
+      }
+      canvas.drawPath(path, inkPaint);
+    }
+
+    for (final s in strokes) {
+      drawPts(s.points);
+    }
+    drawPts(activePoints);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CalibrationPadPainter oldDelegate) => true;
 }

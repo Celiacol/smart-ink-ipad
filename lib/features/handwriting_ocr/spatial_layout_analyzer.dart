@@ -3,6 +3,7 @@ import 'dart:ui' show Rect;
 
 import '../../core/constants/page_constants.dart';
 import '../../core/models/canvas_element.dart';
+import '../../core/models/page_model.dart';
 
 /// Rappresenta una singola riga di scrittura individuata dall'analisi spaziale.
 class HandwritingLineCluster {
@@ -65,6 +66,11 @@ class SpatialLayoutAnalyzer {
     required List<StrokeElement> strokes,
     required TextSizeMode sizeMode,
     required double fixedToolbarFontSize,
+    PageBackgroundTemplate pageBackground = PageBackgroundTemplate.blank,
+    List<TextElement> existingPageTexts = const [],
+    double? previousReferenceHeight,
+    double? previousResolvedFontSize,
+    double calibratedBaselineHeight = 18.0,
   }) {
     if (strokes.isEmpty) {
       return SpatialLayoutResult(
@@ -79,21 +85,82 @@ class SpatialLayoutAnalyzer {
     // 1. Raggruppa i tratti in righe (Line Clusters) per rispettare gli a-capo.
     final rawLines = _clusterStrokesIntoLines(strokes);
 
-    // 2. Calcola l'ancoraggio superiore sinistro (X, Y) dell'intero blocco.
+    // 2. Calcola l'ancoraggio orizzontale X dell'intero blocco.
     double minBlockX = double.infinity;
-    double minBlockY = double.infinity;
     for (final line in rawLines) {
       if (line.boundingBox.left < minBlockX) minBlockX = line.boundingBox.left;
-      if (line.boundingBox.top < minBlockY) minBlockY = line.boundingBox.top;
     }
 
-    // 3. Stima l'altezza della scrittura e risolve la dimensione del font.
+    // 3. Stima l'altezza della scrittura e risolve la dimensione del font
+    //    con isteresi (±35% di tolleranza) e taratura rispetto all'altezza calibrata dell'utente.
     final handwritingHeight = _estimateHandwritingHeight(rawLines, strokes);
-    final resolvedFontSize = sizeMode == TextSizeMode.adaptiveSnap
-        ? PageConstants.snapHandwritingHeightToFontSize(handwritingHeight)
-        : fixedToolbarFontSize;
+    final normalizedHeight = calibratedBaselineHeight > 0
+        ? handwritingHeight * (18.0 / calibratedBaselineHeight)
+        : handwritingHeight;
+    double resolvedFontSize;
+    if (sizeMode == TextSizeMode.adaptiveSnap) {
+      if (previousReferenceHeight != null && previousResolvedFontSize != null) {
+        final diffRatio = (handwritingHeight - previousReferenceHeight).abs() /
+            math.max(1.0, previousReferenceHeight);
+        resolvedFontSize = diffRatio <= 0.35
+            ? previousResolvedFontSize
+            : PageConstants.snapHandwritingHeightToFontSize(normalizedHeight);
+      } else {
+        resolvedFontSize =
+            PageConstants.snapHandwritingHeightToFontSize(normalizedHeight);
+      }
+    } else {
+      resolvedFontSize = fixedToolbarFontSize;
+    }
 
-    // 4. Calcola l'eventuale indentazione (spazi iniziali) per ogni riga
+    // 4. Stima la baseline reale della prima riga scritta (76° percentile delle Y:
+    //    ignora le code discendenti di 'p', 'g', 'q', 'y' in corsivo!)
+    final firstLineBaselineRaw = _estimateInkBaselineY(rawLines.first.strokes);
+    double targetBaselineY =
+        _snapBaselineToPaperLine(firstLineBaselineRaw, pageBackground);
+
+    // 5. Allineamento multi-input sulla stessa riga:
+    //    solo se la nuova parola è a destra/sinistra (non sotto!) di un testo esistente
+    //    e sulla stessa riga fisica (<= 11pt su foglio bianco, o stessa riga su righe/quadretti).
+    final firstLineMaxX = rawLines.first.boundingBox.right;
+    for (final existing in existingPageTexts) {
+      final existingBox = existing.boundingBox;
+      final horizontallyDisjoint =
+          (minBlockX >= existingBox.right - 8.0) ||
+          (firstLineMaxX <= existingBox.left + 8.0);
+      if (!horizontallyDisjoint) continue;
+
+      final existingAscent = existing.fontSize * 0.82;
+      final existingLines = existing.text.split('\n');
+      bool matched = false;
+      for (int li = 0; li < existingLines.length; li++) {
+        final existingBaseline =
+            existing.y + existingAscent + li * (existing.fontSize * 1.32);
+        final tolerance = math.min(11.0, math.max(7.0, existing.fontSize * 0.55));
+        final isSameLine =
+            (pageBackground == PageBackgroundTemplate.ruled ||
+                    pageBackground == PageBackgroundTemplate.grid)
+                ? (targetBaselineY - existingBaseline).abs() < 3.0
+                : (firstLineBaselineRaw - existingBaseline).abs() <= tolerance;
+        if (isSameLine) {
+          targetBaselineY = existingBaseline;
+          if (sizeMode == TextSizeMode.adaptiveSnap) {
+            final sizeDiffRatio = (resolvedFontSize - existing.fontSize).abs() /
+                math.max(1.0, existing.fontSize);
+            if (sizeDiffRatio <= 0.45) {
+              resolvedFontSize = existing.fontSize;
+            }
+          }
+          matched = true;
+          break;
+        }
+      }
+      if (matched) break;
+    }
+
+    final anchorY = targetBaselineY - (resolvedFontSize * 0.82);
+
+    // 6. Calcola l'eventuale indentazione (spazi iniziali) per ogni riga
     //    se l'utente è andato a capo partendo più a destra.
     final spaceWidthEstimate = math.max(6.0, resolvedFontSize * 0.45);
     final enrichedLines = rawLines.map((line) {
@@ -111,11 +178,51 @@ class SpatialLayoutAnalyzer {
 
     return SpatialLayoutResult(
       anchorX: minBlockX,
-      anchorY: minBlockY,
+      anchorY: anchorY,
       lineClusters: enrichedLines,
       estimatedHandwritingHeight: handwritingHeight,
       resolvedFontSize: resolvedFontSize,
     );
+  }
+
+  /// Stima la baseline reale dei tratti ignorando le code discendenti ('p', 'g', 'q', 'y').
+  double _estimateInkBaselineY(List<StrokeElement> strokes) {
+    final ys = <double>[];
+    for (final s in strokes) {
+      for (final p in s.points) {
+        ys.add(p.y);
+      }
+    }
+    if (ys.isEmpty) return 0.0;
+    ys.sort();
+    final idx = ((ys.length - 1) * 0.76).floor().clamp(0, ys.length - 1);
+    return ys[idx];
+  }
+
+  /// Aggancia la baseline alla riga orizzontale più vicina su foglio a righe o a quadretti.
+  double _snapBaselineToPaperLine(
+    double baselineY,
+    PageBackgroundTemplate template,
+  ) {
+    if (template == PageBackgroundTemplate.ruled) {
+      const topMargin = 56.0;
+      const step = 24.0;
+      if (baselineY >= topMargin - 12.0 &&
+          baselineY <= PageConstants.a4Height - 30.0) {
+        final nearest =
+            topMargin + ((baselineY - topMargin) / step).round() * step;
+        if ((baselineY - nearest).abs() <= 12.0) {
+          return nearest - 1.5;
+        }
+      }
+    } else if (template == PageBackgroundTemplate.grid) {
+      const step = 14.17;
+      final nearest = (baselineY / step).round() * step;
+      if ((baselineY - nearest).abs() <= 7.5) {
+        return nearest - 1.0;
+      }
+    }
+    return baselineY;
   }
 
   /// Compone il testo finale multi-riga unendo i testi riconosciuti per ciascuna riga
@@ -196,17 +303,9 @@ class SpatialLayoutAnalyzer {
   }
 
   /// Determina se un tratto [strokeBox] appartiene alla riga [lineBox]
-  /// (inclusi puntini sulle 'i', accenti o tagli delle 't').
+  /// (inclusi puntini sulle 'i', accenti o tagli delle 't'), evitando di fondere
+  /// due righe diverse quando una discendente ('p', 'g') tocca la riga sotto.
   bool _belongsToSameLine(Rect lineBox, Rect strokeBox) {
-    final overlapTop = math.max(lineBox.top, strokeBox.top);
-    final overlapBottom = math.min(lineBox.bottom, strokeBox.bottom);
-    final verticalOverlap = overlapBottom - overlapTop;
-
-    final minHeight = math.min(lineBox.height, strokeBox.height);
-    if (minHeight > 0 && verticalOverlap >= minHeight * 0.30) {
-      return true;
-    }
-
     // Gestione accenti e puntini della 'i' (piccoli tratti appena sopra la riga
     // e allineati orizzontalmente).
     final isDotOrAccent = strokeBox.height < 8.0 && strokeBox.width < 12.0;
@@ -219,9 +318,22 @@ class SpatialLayoutAnalyzer {
       }
     }
 
-    // Controlla anche la distanza tra i centri verticali rispetto all'altezza della riga.
+    // Confronta i centri verticali con soglia stretta (13pt < 24pt interlinea A4)
     final centerDistance = (lineBox.center.dy - strokeBox.center.dy).abs();
-    return centerDistance <= math.max(12.0, lineBox.height * 0.55);
+    if (centerDistance <= 13.0) {
+      return true;
+    }
+
+    final overlapTop = math.max(lineBox.top, strokeBox.top);
+    final overlapBottom = math.min(lineBox.bottom, strokeBox.bottom);
+    final verticalOverlap = overlapBottom - overlapTop;
+    final minHeight = math.min(lineBox.height, strokeBox.height);
+
+    // Richiede almeno il 55% di sovrapposizione verticale così discendenti/ascendenti
+    // tra due righe adiacenti non uniscono mai la Riga 1 con la Riga 2.
+    return minHeight > 0 &&
+        verticalOverlap >= minHeight * 0.55 &&
+        centerDistance <= 18.0;
   }
 
   /// Stima l'altezza della calligrafia dell'utente in punti A4.

@@ -35,8 +35,8 @@ class PageConstants {
   // ---------------------------------------------------------------------------
 
   /// Tempo di inattività predefinito (dopo il distacco della penna dallo schermo)
-  /// prima di avviare la conversione in testo digitale.
-  static const int defaultOcrDebounceMs = 1200;
+  /// prima di avviare la conversione in testo digitale (1.8s per dare tempo a tagli delle 't' e accenti).
+  static const int defaultOcrDebounceMs = 1800;
 
   /// Limiti configurabili dall'utente per il timer di conversione.
   static const int minOcrDebounceMs = 600;

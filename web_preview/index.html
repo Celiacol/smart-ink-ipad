@@ -154,17 +154,19 @@
       overflow: auto;
       touch-action: none;
       overscroll-behavior: none;
-      padding: 28px 24px 80px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      padding: 36px 35vw 160px;
+      display: block;
+    }
+
+    #zoomSizer {
+      margin: 0;
     }
 
     .zoom-stage {
       display: flex;
       flex-direction: column;
       align-items: center;
-      transform-origin: top left;
+      transform-origin: 0 0;
     }
 
     .a4-page {
@@ -232,7 +234,7 @@
         height: auto;
         overflow: visible;
       }
-      .toolbar, .unlock-zone {
+      .toolbar, .unlock-zone, .cal-modal-backdrop {
         display: none !important;
       }
       .workspace {
@@ -245,6 +247,61 @@
         page-break-after: always;
       }
     }
+
+    /* Modale leggera di Calibrazione Calligrafia (3 frasi offline) */
+    .cal-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      z-index: 50;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .cal-modal-backdrop.open {
+      display: flex;
+    }
+    .cal-modal {
+      width: 100%;
+      max-width: 600px;
+      background: #fff;
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .cal-phrase-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 18px;
+      font-weight: 600;
+      color: #1e3a8a;
+    }
+    .cal-pad-wrapper {
+      border: 1.5px solid #cbd5e1;
+      border-radius: 10px;
+      background: #fff;
+      height: 170px;
+      position: relative;
+      touch-action: none;
+    }
+    .cal-pad-wrapper canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+    .cal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 4px;
+    }
   </style>
 </head>
 <body>
@@ -254,6 +311,7 @@
     <button class="chip" data-tool="highlighter">🖍️ Evidenz.</button>
     <button class="chip" data-tool="eraser">🧹 Gomma</button>
     <button class="chip" data-tool="shape">📐 Forme</button>
+    <button class="chip" data-tool="lassoReflow" title="Cerchia il testo convertito per compattare tutti gli spazi a spazi da uno">⭕ Cerchia Testo</button>
 
     <select id="shapeKindSelect" style="display:none;">
       <option value="rectangle">Rettangolo</option>
@@ -272,11 +330,18 @@
     <div class="divider"></div>
 
     <button class="chip active" id="toggleAutoOcrBtn">✨ Auto-Testo: ON</button>
+    <button class="chip active" id="toggleMergeLineBtn" title="Se attivo, accorpa con spazio singolo il testo sulla stessa riga e va a capo a fine riga. Disattiva per testo libero separato (es. liste/colonne).">🔗 Accorpa Riga: ON</button>
+    <button class="btn" id="openCalibrateBtn" title="Calibra l'app in 3 frasi sulla tua calligrafia (100% locale)">🎯 Calibra</button>
+    <select id="ocrDelaySelect" title="Tempo di attesa dopo aver staccato la penna">
+      <option value="1200">⏱️ 1.2s</option>
+      <option value="1800" selected>⏱️ 1.8s</option>
+      <option value="2500">⏱️ 2.5s</option>
+    </select>
     <button class="chip" id="togglePenOnlyBtn" title="Se attivo, scrive solo con Apple Pencil e usa le dita per scorrere">🖐️ Scrivi: Penna + Dito</button>
 
-    <select id="sizeModeSelect" title="Modalità Dimensione Testo Convertito">
-      <option value="adaptiveSnap">Dim. 1: Auto-Snap a Stili (Titolo/Corpo)</option>
-      <option value="fixedFromToolbar">Dim. 2: Fissa da Toolbar</option>
+    <select id="sizeModeSelect" title="Modalità Dimensione Testo Convertito" style="color: #dc2626; font-weight: 600; border-color: #fca5a5;">
+      <option value="adaptiveSnap" style="color: #dc2626; font-weight: 600;">Dim. 1: Auto-Snap (BETA)</option>
+      <option value="fixedFromToolbar" style="color: #1e293b; font-weight: 500;">Dim. 2: Fissa da Toolbar</option>
     </select>
 
     <select id="fixedFontSizeSelect" style="display:none;">
@@ -310,6 +375,23 @@
   <!-- Indicatore flottante: non altera MAI la barra degli strumenti -->
   <span class="ocr-status" id="ocrTimerBadge">⏳ Conversione tra <span id="ocrCountdown">1.2</span>s...</span>
 
+  <!-- Modale Guidata 3 Frasi: Calibrazione Calligrafia 100% Offline -->
+  <div class="cal-modal-backdrop" id="calModal">
+    <div class="cal-modal">
+      <div style="font-weight:700; font-size:15px;" id="calTitle">Calibrazione Calligrafia (1/3)</div>
+      <div class="cal-phrase-box" id="calTargetPhrase">Oggi tutto funziona perfettamente</div>
+      <div style="font-size:12.5px; color:#64748b;" id="calHint">Scrivi col tuo ritmo naturale (corsivo o stampatello).</div>
+      <div class="cal-pad-wrapper">
+        <canvas id="calCanvas" width="560" height="170"></canvas>
+      </div>
+      <div class="cal-actions">
+        <button class="btn" id="calCancelBtn">Annulla</button>
+        <button class="btn" id="calClearBtn">Pulisci</button>
+        <button class="btn primary" id="calNextBtn">Avanti (1/3)</button>
+      </div>
+    </div>
+  </div>
+
   <div class="workspace" id="workspace">
     <div id="zoomSizer" style="position: relative; flex-shrink: 0;">
       <div class="zoom-stage" id="zoomStage">
@@ -333,6 +415,8 @@
     let activeTool = 'pen';
     let activeColor = '#1e293b';
     let autoOcrEnabled = true;
+    let mergeOnSameLineEnabled = true;
+    let ocrDelayMs = 1800;
     let penOnlyMode = false;
     let sizeMode = 'adaptiveSnap';
     let fixedFontSize = 14;
@@ -342,6 +426,43 @@
     // Stato Apple Pencil & Palm Rejection
     let activePenPointerId = null;
     let lastPenActivityTime = 0;
+
+    // Stato Continuità Scrittura Multi-Riga (pausa <= 1200ms = testo continuo, > 1200ms = nuovo paragrafo a capo)
+    let lastStrokeUpTimeMs = 0;
+    let pendingBatchIsContinuous = false;
+    let lastFlowTailElementId = null;
+    let lastFlowPageIndex = null;
+    const CONTINUOUS_WRAP_PAUSE_MS = 1200;
+
+    // Memoria della dimensione adattiva (isteresi: evita salti di font tra input simili)
+    let lastAdaptiveRefHeight = null;
+    let lastAdaptiveFontSize = null;
+
+    // Profilo Personale Calligrafia (salvato in locale sul dispositivo, costo CPU ~0)
+    const CALIBRATION_STORAGE_KEY = 'smartInkCalibrationProfile_v1';
+    let calibrationProfile = {
+      wordGapThreshold: 13.0,
+      baselineHandwritingHeight: 18.0,
+      slantShear: 0.0,
+      personalCorrections: {},
+      isCalibrated: false
+    };
+    try {
+      const savedCal = localStorage.getItem(CALIBRATION_STORAGE_KEY);
+      if (savedCal) {
+        calibrationProfile = { ...calibrationProfile, ...JSON.parse(savedCal) };
+      }
+    } catch (_) {}
+
+    function saveCalibrationProfile() {
+      try {
+        localStorage.setItem(CALIBRATION_STORAGE_KEY, JSON.stringify(calibrationProfile));
+      } catch (_) {}
+      const btn = document.getElementById('openCalibrateBtn');
+      if (btn) {
+        btn.textContent = calibrationProfile.isCalibrated ? '🎯 Calibrata ✓' : '🎯 Calibra';
+      }
+    }
 
     // Stato Pagine e Storico Comandi (Undo)
     const pages = [{ index: 0, elements: [] }];
@@ -374,17 +495,24 @@
       if (Math.abs(clamped - zoomLevel) < 0.001) return;
 
       const wsRect = workspace.getBoundingClientRect();
-      const focusX = anchorClientX !== null ? (anchorClientX - wsRect.left) : wsRect.width / 2;
-      const focusY = anchorClientY !== null ? (anchorClientY - wsRect.top) : wsRect.height / 2;
+      const targetX = anchorClientX !== null ? anchorClientX : (wsRect.left + wsRect.width / 2);
+      const targetY = anchorClientY !== null ? anchorClientY : (wsRect.top + wsRect.height / 2);
 
-      const contentX = (workspace.scrollLeft + focusX) / zoomLevel;
-      const contentY = (workspace.scrollTop + focusY) / zoomLevel;
+      // Calcola il punto esatto sotto le dita nello spazio A4 non scalato
+      const oldStageRect = zoomStage.getBoundingClientRect();
+      const stageX = (targetX - oldStageRect.left) / zoomLevel;
+      const stageY = (targetY - oldStageRect.top) / zoomLevel;
 
       zoomLevel = clamped;
       updateZoomLayout();
 
-      workspace.scrollLeft = contentX * zoomLevel - focusX;
-      workspace.scrollTop = contentY * zoomLevel - focusY;
+      // Misura dove si è spostato quel punto dopo lo scale e compensa esattamente lo scroll
+      const newStageRect = zoomStage.getBoundingClientRect();
+      const newScreenX = newStageRect.left + stageX * zoomLevel;
+      const newScreenY = newStageRect.top + stageY * zoomLevel;
+
+      workspace.scrollLeft += (newScreenX - targetX);
+      workspace.scrollTop += (newScreenY - targetY);
     }
 
     function snapHeightToStyle(h) {
@@ -392,6 +520,82 @@
       if (h <= 24) return 14;
       if (h <= 36) return 20;
       return 28;
+    }
+
+    /// Risolve la dimensione adattiva confrontandola con quella dell'input precedente:
+    /// se la scrittura rientra nel range di tolleranza (±35%), mantiene la stessa grandezza
+    /// per evitare cambi continui; cambia solo se la variazione è netta/stravolgente.
+    function resolveAdaptiveFontSizeWithMemory(strokes) {
+      const heights = strokes
+        .map(s => s.box.height)
+        .filter(h => h >= 6)
+        .sort((a, b) => a - b);
+
+      const p75Height = heights.length > 0
+        ? heights[Math.min(heights.length - 1, Math.round((heights.length - 1) * 0.75))]
+        : 18;
+
+      const normalizedHeight = calibrationProfile.baselineHandwritingHeight > 0
+        ? p75Height * (18 / calibrationProfile.baselineHandwritingHeight)
+        : p75Height;
+
+      if (lastAdaptiveRefHeight !== null && lastAdaptiveFontSize !== null) {
+        const diffRatio = Math.abs(p75Height - lastAdaptiveRefHeight) / Math.max(1, lastAdaptiveRefHeight);
+        if (diffRatio <= 0.35) {
+          return lastAdaptiveFontSize;
+        }
+      }
+
+      const snapped = snapHeightToStyle(normalizedHeight);
+      lastAdaptiveRefHeight = p75Height;
+      lastAdaptiveFontSize = snapped;
+      return snapped;
+    }
+
+    /// Stima la baseline reale dei tratti scritti a mano (76° percentile delle Y dei punti):
+    /// ignora le code discendenti di lettere come 'p', 'g', 'q', 'y' in corsivo!
+    function estimateInkBaselineY(lineStrokes) {
+      const ys = [];
+      for (const s of lineStrokes) {
+        for (const p of s.points) {
+          ys.push(p.y);
+        }
+      }
+      if (ys.length === 0) return 0;
+      ys.sort((a, b) => a - b);
+      const idx = Math.min(ys.length - 1, Math.floor((ys.length - 1) * 0.76));
+      return ys[idx];
+    }
+
+    /// Calcola l'ascent tipografico reale di un font per posizionare la baseline precisa sulla riga.
+    function getFontAscent(ctx, fontSize) {
+      ctx.save();
+      ctx.font = `500 ${fontSize}px Inter, Roboto, sans-serif`;
+      const metrics = ctx.measureText('Hg');
+      ctx.restore();
+      return metrics.actualBoundingBoxAscent || (fontSize * 0.80);
+    }
+
+    /// Trova la riga orizzontale più vicina su foglio a righe o a quadretti (se entro tolleranza).
+    /// Restituisce la Y esatta su cui far poggiare la baseline (con 1.5pt di respiro sopra il tratto della riga).
+    function snapBaselineToPaperLine(baselineY, template) {
+      if (template === 'ruled') {
+        const topMargin = 56;
+        const step = 24;
+        if (baselineY >= topMargin - 12 && baselineY <= A4_HEIGHT - 30) {
+          const nearest = topMargin + Math.round((baselineY - topMargin) / step) * step;
+          if (Math.abs(baselineY - nearest) <= 12) {
+            return nearest - 1.5;
+          }
+        }
+      } else if (template === 'grid') {
+        const step = 14.17;
+        const nearest = Math.round(baselineY / step) * step;
+        if (Math.abs(baselineY - nearest) <= 7.5) {
+          return nearest - 1.0;
+        }
+      }
+      return baselineY;
     }
 
     function renderAllPages() {
@@ -479,10 +683,13 @@
           ctx.save();
           ctx.fillStyle = el.color;
           ctx.font = `500 ${el.fontSize}px Inter, Roboto, sans-serif`;
-          ctx.textBaseline = 'top';
+          // 'alphabetic' posiziona la base reale delle lettere (a,c,e,m,o) esattamente sopra la riga,
+          // mentre le code discendenti (p,g,q,y) scendono naturalmente sotto la riga!
+          ctx.textBaseline = 'alphabetic';
+          const baseLineY = el.baselineY !== undefined ? el.baselineY : (el.y + el.fontSize * 0.82);
           const lines = el.text.split('\n');
           lines.forEach((line, i) => {
-            ctx.fillText(line, el.x, el.y + i * (el.fontSize * 1.35));
+            ctx.fillText(line, el.x, baseLineY + i * (el.fontSize * 1.35));
           });
           ctx.restore();
         }
@@ -535,11 +742,11 @@
       return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY, pathLen };
     }
 
-    // Rileva se un evento touch è probabilmente il palmo della mano appoggiato sullo schermo
+    // Rileva se un evento touch è davvero un palmo appoggiato (un dito normale su iPad misura ~30-50px!)
     function isProbablePalm(pointerEvent) {
       if (pointerEvent.pointerType !== 'touch') return false;
-      return (pointerEvent.width && pointerEvent.width > 24) ||
-             (pointerEvent.height && pointerEvent.height > 24);
+      return (pointerEvent.width && pointerEvent.width > 70) ||
+             (pointerEvent.height && pointerEvent.height > 70);
     }
 
     // Mappa le coordinate schermo nello spazio logico A4 (595 x 842) indipendentemente dallo Zoom
@@ -565,9 +772,13 @@
 
       function cancelCurrentStroke() {
         if (!isDown) return;
+        const pid = activeDrawPointerId;
         isDown = false;
         activeDrawPointerId = null;
         currentPoints = [];
+        if (pid !== null) {
+          try { canvas.releasePointerCapture(pid); } catch (_) {}
+        }
         drawPageCanvas(ctx, page);
       }
 
@@ -582,8 +793,8 @@
         } else if (e.pointerType === 'touch') {
           // In modalità "Solo Apple Pencil", il dito non deve MAI disegnare
           if (penOnlyMode) return;
-          // Se stai poggiando il palmo o scrivendo con la penna, ignora il tocco
-          if (activePenPointerId !== null || (Date.now() - lastPenActivityTime < 450) || isProbablePalm(e)) {
+          // Se stai usando la penna o poggiando l'intero palmo (>70px), ignora
+          if (activePenPointerId !== null || (Date.now() - lastPenActivityTime < 400) || isProbablePalm(e)) {
             return;
           }
         }
@@ -597,10 +808,48 @@
         const pt = getScaledCanvasPoint(canvas, e, 0);
         currentPoints = [pt];
 
+        // Controllo continuità tra un tratto e il successivo (pausa breve <= 1.2s = scrittura continua)
+        const nowMs = Date.now();
+        const pauseSinceLastStroke = lastStrokeUpTimeMs > 0 ? (nowMs - lastStrokeUpTimeMs) : Infinity;
+        const isContinuousGesture = pauseSinceLastStroke <= CONTINUOUS_WRAP_PAUSE_MS;
+
+        // Se l'utente cambia riga (va a capo) mentre scrive, accoda subito la riga precedente.
+        // ATTENZIONE: non staccare mai se l'utente sta semplicemente salendo sopra la parola
+        // corrente per mettere l'accento, il puntino sulla 'i' o la sbarra della 't'!
+        if (activeTool === 'pen' && autoOcrEnabled && pendingStrokes.length > 0 && pendingPageIndex === page.index) {
+          const lineBounds = getPendingLineVerticalBounds(pendingStrokes);
+          const pendingBaseline = estimateInkBaselineY(pendingStrokes);
+          const horizontallyOverlapsPending = pendingStrokes.some(
+            s => pt.x >= s.box.minX - 18 && pt.x <= s.box.maxX + 18
+          );
+          const isDiacriticOrTallLetterAbove = horizontallyOverlapsPending && pt.y >= lineBounds.minY - 28 && pt.y <= pendingBaseline + 10;
+          const wentToNewLine = !isDiacriticOrTallLetterAbove && (
+            (pt.y > pendingBaseline + 16 && pt.y > lineBounds.maxY + 6) ||
+            pt.y < lineBounds.minY - 30
+          );
+          if (wentToNewLine) {
+            const batch = [...pendingStrokes];
+            const wasBatchContinuous = pendingBatchIsContinuous;
+            pendingStrokes = [];
+            enqueueOcrBatch(ctx, page, batch, wasBatchContinuous);
+            // Se ha cambiato riga senza pausa (<= 1.2s), la nuova riga continua il flusso della precedente!
+            // Se c'è stata una pausa (> 1.2s), inizia un nuovo paragrafo staccato su questa riga.
+            pendingBatchIsContinuous = isContinuousGesture;
+            if (!isContinuousGesture) {
+              lastFlowTailElementId = null;
+            }
+          }
+        } else if (activeTool === 'pen' && autoOcrEnabled && pendingStrokes.length === 0) {
+          pendingBatchIsContinuous = isContinuousGesture;
+          if (!isContinuousGesture) {
+            lastFlowTailElementId = null;
+          }
+        }
+
         // Se l'utente appoggia la penna, il timer di conversione si ferma subito!
         clearTimeout(ocrTimer);
         clearInterval(countdownInterval);
-        ocrBadge.classList.remove('visible');
+        if (!isProcessingOcrQueue) ocrBadge.classList.remove('visible');
       });
 
       canvas.addEventListener('pointermove', e => {
@@ -624,6 +873,20 @@
         } else if (activeTool === 'shape') {
           const kind = document.getElementById('shapeKindSelect').value;
           drawPageCanvas(ctx, page, c => drawShapeOnCtx(c, kind, currentPoints[0], pt, activeColor));
+        } else if (activeTool === 'lassoReflow') {
+          drawPageCanvas(ctx, page, c => {
+            c.save();
+            c.strokeStyle = '#2563eb';
+            c.fillStyle = 'rgba(37, 99, 235, 0.08)';
+            c.lineWidth = 2;
+            c.setLineDash([6, 4]);
+            c.beginPath();
+            currentPoints.forEach((p, i) => i === 0 ? c.moveTo(p.x, p.y) : c.lineTo(p.x, p.y));
+            c.closePath();
+            c.fill();
+            c.stroke();
+            c.restore();
+          });
         } else {
           drawPageCanvas(ctx, page, c => {
             c.save();
@@ -670,6 +933,7 @@
           drawPageCanvas(ctx, page);
 
           if (activeTool === 'pen' && autoOcrEnabled) {
+            lastStrokeUpTimeMs = Date.now();
             pendingPageIndex = page.index;
             pendingStrokes.push(stroke);
             startOcrDebounceTimer(ctx, page);
@@ -687,6 +951,9 @@
           page.elements.push(shapeEl);
           undoStack.push({ type: 'add', pageIndex: page.index, elementId: shapeEl.id });
           drawPageCanvas(ctx, page);
+        } else if (activeTool === 'lassoReflow') {
+          reflowCircledTexts(ctx, page, currentPoints);
+          drawPageCanvas(ctx, page);
         }
       }
 
@@ -695,147 +962,338 @@
     }
 
     // -------------------------------------------------------------------------
-    // Motore Gesture Workspace:
-    // - Blocca lo scroll/zoom nativo di Safari quando si usa Apple Pencil
+    // Motore Gesture Workspace basato su TouchEvent hardware nativi (iPadOS):
+    // - Apple Pencil (touchType === 'stylus'): blocca lo scroll nativo Safari
     // - 2 Dita: Pinch-to-Zoom fluido + Pan (funziona in TUTTE le modalità)
     // - 1 Dito (in modalità "Solo Apple Pencil"): Scorrimento fluido del foglio
     //   con protezione automatica contro il palmo appoggiato sullo schermo!
     // -------------------------------------------------------------------------
-    const activeTouches = new Map();
     let pinchStartDist = 0;
     let pinchStartZoom = 1.0;
+    let pinchAnchorClientX = null;
+    let pinchAnchorClientY = null;
+    let pinchAnchorStageX = null;
+    let pinchAnchorStageY = null;
     let lastPanCenter = null;
+    let isTouchScrolling = false;
+    let isStylusTouching = false;
 
-    // Previene che iPadOS Safari trasformi il tratto dell'Apple Pencil in scroll o selezione
-    workspace.addEventListener('touchstart', e => {
-      const hasStylus = Array.from(e.touches).some(t => t.touchType === 'stylus');
-      if (hasStylus || e.touches.length >= 2 || penOnlyMode) {
-        if (e.target && !e.target.closest('select, button, input')) {
-          e.preventDefault();
+    function getTouchGroups(touchList) {
+      const stylus = [];
+      const fingers = [];
+      for (let i = 0; i < touchList.length; i++) {
+        const t = touchList[i];
+        if (t.touchType === 'stylus') {
+          stylus.push(t);
+        } else {
+          fingers.push(t);
         }
       }
-    }, { passive: false });
+      return { stylus, fingers };
+    }
 
-    workspace.addEventListener('touchmove', e => {
-      const hasStylus = Array.from(e.touches).some(t => t.touchType === 'stylus');
-      if (hasStylus || e.touches.length >= 2 || penOnlyMode) {
+    workspace.addEventListener('touchstart', e => {
+      // Non interferire con i pulsanti, select o la zona di sblocco pagina
+      if (e.target && e.target.closest('select, button, input, #unlockZone')) return;
+
+      const { stylus, fingers } = getTouchGroups(e.touches);
+
+      if (stylus.length > 0) {
+        isStylusTouching = true;
+        lastPenActivityTime = Date.now();
         e.preventDefault();
-      }
-    }, { passive: false });
-
-    workspace.addEventListener('pointerdown', e => {
-      if (e.pointerType !== 'touch') return;
-      // Ignora il contatto largo del palmo della mano o se la penna sta scrivendo
-      if (isProbablePalm(e) || activePenPointerId !== null || (Date.now() - lastPenActivityTime < 400)) {
         return;
       }
-      // Non interferire con il gesto Pull-Up & Hold nella zona sblocco pagina
-      if (e.target && e.target.closest('#unlockZone')) return;
 
-      activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-      if (activeTouches.size === 2) {
-        // Entriamo in Pinch-to-Zoom a 2 dita: annulliamo eventuale puntino accidentale del 1° dito
+      if (fingers.length >= 2) {
+        // Entriamo in Pinch-to-Zoom a 2 dita: fissiamo il punto centrale tra le 2 dita
+        // che resterà bloccato finché non si solleva almeno un dito!
         isMultiTouchGesturing = true;
+        isTouchScrolling = false;
         if (activeDrawingCanceller) activeDrawingCanceller();
+        e.preventDefault();
 
-        const pts = Array.from(activeTouches.values());
-        pinchStartDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) || 1;
+        const p0 = fingers[0];
+        const p1 = fingers[1];
+        pinchStartDist = Math.hypot(p1.clientX - p0.clientX, p1.clientY - p0.clientY) || 1;
         pinchStartZoom = zoomLevel;
-        lastPanCenter = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
-      } else if (activeTouches.size === 1 && penOnlyMode) {
-        lastPanCenter = { x: e.clientX, y: e.clientY };
+
+        pinchAnchorClientX = (p0.clientX + p1.clientX) / 2;
+        pinchAnchorClientY = (p0.clientY + p1.clientY) / 2;
+
+        const stageRect = zoomStage.getBoundingClientRect();
+        pinchAnchorStageX = (pinchAnchorClientX - stageRect.left) / zoomLevel;
+        pinchAnchorStageY = (pinchAnchorClientY - stageRect.top) / zoomLevel;
+      } else if (fingers.length === 1 && penOnlyMode) {
+        const f = fingers[0];
+        // Protezione palmo: se la penna è appena stata usata o il contatto è molto largo (> 36px raggio)
+        const isLargePalm = (f.radiusX && f.radiusX > 36) || (f.radiusY && f.radiusY > 36);
+        if (isStylusTouching || activePenPointerId !== null || (Date.now() - lastPenActivityTime < 400) || isLargePalm) {
+          return;
+        }
+        isTouchScrolling = true;
+        lastPanCenter = { x: f.clientX, y: f.clientY };
+        e.preventDefault();
       }
-    });
+    }, { passive: false, capture: true });
 
-    workspace.addEventListener('pointermove', e => {
-      if (e.pointerType !== 'touch' || !activeTouches.has(e.pointerId)) return;
-      activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    workspace.addEventListener('touchmove', e => {
+      if (e.target && e.target.closest('#unlockZone')) return;
+      const { stylus, fingers } = getTouchGroups(e.touches);
 
-      if (activeTouches.size === 2) {
-        const pts = Array.from(activeTouches.values());
-        const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) || 1;
-        const center = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
-
-        // 1. Pan con le due dita
-        if (lastPanCenter) {
-          workspace.scrollLeft -= (center.x - lastPanCenter.x);
-          workspace.scrollTop -= (center.y - lastPanCenter.y);
-        }
-        lastPanCenter = center;
-
-        // 2. Zoom proporzionale alla distanza tra le due dita
-        const targetZoom = pinchStartZoom * (dist / pinchStartDist);
-        setZoom(targetZoom, center.x, center.y);
-      } else if (activeTouches.size === 1 && penOnlyMode && !isMultiTouchGesturing) {
-        // Scorrimento fluido con 1 dito quando è attivo "Solo Apple Pencil"
-        if (activePenPointerId !== null || (Date.now() - lastPenActivityTime < 400)) return;
-        if (lastPanCenter) {
-          workspace.scrollLeft -= (e.clientX - lastPanCenter.x);
-          workspace.scrollTop -= (e.clientY - lastPanCenter.y);
-        }
-        lastPanCenter = { x: e.clientX, y: e.clientY };
+      if (stylus.length > 0) {
+        lastPenActivityTime = Date.now();
+        e.preventDefault();
+        return;
       }
-    });
 
-    function handleTouchEnd(e) {
-      if (e.pointerType !== 'touch') return;
-      activeTouches.delete(e.pointerId);
-      if (activeTouches.size < 2) {
-        if (activeTouches.size === 1) {
-          const remaining = Array.from(activeTouches.values())[0];
-          lastPanCenter = { x: remaining.x, y: remaining.y };
-        } else {
-          isMultiTouchGesturing = false;
-          lastPanCenter = null;
+      if (fingers.length >= 2 && pinchAnchorStageX !== null) {
+        isMultiTouchGesturing = true;
+        e.preventDefault();
+
+        const p0 = fingers[0];
+        const p1 = fingers[1];
+        const dist = Math.hypot(p1.clientX - p0.clientX, p1.clientY - p0.clientY) || 1;
+        const targetZoom = Math.min(3.0, Math.max(0.5, pinchStartZoom * (dist / pinchStartDist)));
+
+        zoomLevel = targetZoom;
+        updateZoomLayout();
+
+        // Mantiene il punto centrale iniziale delle due dita bloccato esattamente dov'era
+        const newStageRect = zoomStage.getBoundingClientRect();
+        const newScreenX = newStageRect.left + pinchAnchorStageX * zoomLevel;
+        const newScreenY = newStageRect.top + pinchAnchorStageY * zoomLevel;
+        workspace.scrollLeft += (newScreenX - pinchAnchorClientX);
+        workspace.scrollTop += (newScreenY - pinchAnchorClientY);
+      } else if (fingers.length === 1 && penOnlyMode && isTouchScrolling && !isMultiTouchGesturing) {
+        if (isStylusTouching || activePenPointerId !== null || (Date.now() - lastPenActivityTime < 400)) {
+          return;
         }
+        e.preventDefault();
+        const f = fingers[0];
+        if (lastPanCenter) {
+          workspace.scrollLeft -= (f.clientX - lastPanCenter.x);
+          workspace.scrollTop -= (f.clientY - lastPanCenter.y);
+        }
+        lastPanCenter = { x: f.clientX, y: f.clientY };
+      }
+    }, { passive: false, capture: true });
+
+    function handleTouchStateEnd(e) {
+      const { stylus, fingers } = getTouchGroups(e.touches);
+      if (stylus.length === 0) {
+        if (isStylusTouching) lastPenActivityTime = Date.now();
+        isStylusTouching = false;
+      }
+      if (fingers.length < 2) {
+        isMultiTouchGesturing = false;
+        pinchAnchorStageX = null;
+        pinchAnchorStageY = null;
+        pinchAnchorClientX = null;
+        pinchAnchorClientY = null;
+      }
+      if (fingers.length === 1 && penOnlyMode) {
+        lastPanCenter = { x: fingers[0].clientX, y: fingers[0].clientY };
+      } else if (fingers.length === 0) {
+        isTouchScrolling = false;
+        lastPanCenter = null;
       }
     }
 
-    workspace.addEventListener('pointerup', handleTouchEnd);
-    workspace.addEventListener('pointercancel', handleTouchEnd);
+    workspace.addEventListener('touchend', handleTouchStateEnd, { capture: true });
+    workspace.addEventListener('touchcancel', handleTouchStateEnd, { capture: true });
+
+    // -------------------------------------------------------------------------
+    // Coda Incrementale OCR (parola per parola / riga per riga):
+    // - Salva i tratti appena completati (su cambio riga o allo scadere del timer)
+    // - Divide righe lunghe in blocchi da max 3 parole così non perde MAI pezzi
+    // - Posiziona ogni riga alle sue coordinate ESATTE e rimuove solo i tratti convertiti
+    // -------------------------------------------------------------------------
+    const ocrQueue = [];
+    let isProcessingOcrQueue = false;
+
+    function getPendingLineVerticalBounds(strokes) {
+      let minY = Infinity, maxY = -Infinity;
+      for (const s of strokes) {
+        if (s.box.height < 8 && s.box.width < 10) continue; // ignora puntini isolati
+        if (s.box.minY < minY) minY = s.box.minY;
+        if (s.box.maxY > maxY) maxY = s.box.maxY;
+      }
+      if (minY === Infinity) {
+        for (const s of strokes) {
+          if (s.box.minY < minY) minY = s.box.minY;
+          if (s.box.maxY > maxY) maxY = s.box.maxY;
+        }
+      }
+      return { minY, maxY };
+    }
 
     function startOcrDebounceTimer(ctx, page) {
       clearTimeout(ocrTimer);
       clearInterval(countdownInterval);
 
-      let remainingMs = 1200;
+      let remainingMs = ocrDelayMs;
       ocrCountdownEl.textContent = (remainingMs / 1000).toFixed(1);
       ocrBadge.classList.add('visible');
 
       countdownInterval = setInterval(() => {
         remainingMs = Math.max(0, remainingMs - 100);
-        ocrCountdownEl.textContent = (remainingMs / 1000).toFixed(1);
+        if (!isProcessingOcrQueue) {
+          ocrCountdownEl.textContent = (remainingMs / 1000).toFixed(1);
+        }
       }, 100);
 
       ocrTimer = setTimeout(() => {
         clearInterval(countdownInterval);
-        ocrBadge.classList.remove('visible');
-        convertPendingStrokesToText(ctx, page);
-      }, 1200);
+        if (pendingStrokes.length > 0) {
+          const batch = [...pendingStrokes];
+          const wasContinuous = pendingBatchIsContinuous;
+          pendingStrokes = [];
+          pendingBatchIsContinuous = false;
+          enqueueOcrBatch(ctx, page, batch, wasContinuous);
+        } else if (!isProcessingOcrQueue) {
+          ocrBadge.classList.remove('visible');
+        }
+      }, ocrDelayMs);
     }
 
-    // Riconoscimento REALE della scrittura a mano tramite tracciati vettoriali (corsivo e stampatello)
-    async function recognizeLineStrokesReal(line, boxWidth, boxHeight) {
+    function enqueueOcrBatch(ctx, page, strokes, isContinuousWithPrevious = false) {
+      if (!strokes || strokes.length === 0) return;
+      ocrQueue.push({ ctx, page, strokes, isContinuousWithPrevious });
+      if (!isProcessingOcrQueue) {
+        processOcrQueue();
+      }
+    }
+
+    async function processOcrQueue() {
+      if (isProcessingOcrQueue) return;
+      isProcessingOcrQueue = true;
+
       try {
-        // Formato vettoriale Digital Ink: per ogni tratto [ [x1, x2, ...], [y1, y2, ...], [t1, t2, ...] ]
-        const inkTrace = line.strokes.map(s => {
-          const xs = s.points.map(p => Math.round(p.x));
+        while (ocrQueue.length > 0) {
+          const job = ocrQueue.shift();
+          ocrBadge.classList.add('visible');
+          ocrCountdownEl.textContent = '...';
+          await convertBatchToText(job.ctx, job.page, job.strokes, job.isContinuousWithPrevious);
+        }
+      } finally {
+        isProcessingOcrQueue = false;
+        ocrBadge.classList.remove('visible');
+      }
+    }
+
+    const ITALIAN_APOSTROPHE_ACCENTS = {
+      "perche'": 'perché', "poiche'": 'poiché', "finche'": 'finché',
+      "citta'": 'città', "gia'": 'già', "piu'": 'più', "puo'": 'può',
+      "cosi'": 'così', "cio'": 'ciò', "percio'": 'perciò', "e'": 'è',
+      "lunedi'": 'lunedì', "martedi'": 'martedì', "mercoledi'": 'mercoledì',
+      "giovedi'": 'giovedì', "venerdi'": 'venerdì', "universita'": 'università',
+      "qualita'": 'qualità', "realta'": 'realtà', "verita'": 'verità', "liberta'": 'libertà'
+    };
+
+    function applyPersonalAndItalianRules(text) {
+      return text.split(/\s+/).map(w => {
+        const lower = w.toLowerCase();
+        const personal = calibrationProfile.personalCorrections[lower];
+        if (personal) {
+          return (w[0] && w[0].toUpperCase() === w[0])
+            ? personal[0].toUpperCase() + personal.slice(1)
+            : personal;
+        }
+        const accentFix = ITALIAN_APOSTROPHE_ACCENTS[lower];
+        if (accentFix) {
+          return (w[0] && w[0].toUpperCase() === w[0])
+            ? accentFix[0].toUpperCase() + accentFix.slice(1)
+            : accentFix;
+        }
+        return w;
+      }).join(' ');
+    }
+
+    // Smart Re-Ranking dei Top-10 candidati (100% locale, costo < 0.3ms)
+    function selectBestCandidate(candidates, strokesList) {
+      if (!candidates || candidates.length === 0) return '';
+
+      let crossbarCount = 0;
+      let maxRight = -Infinity, minTop = Infinity;
+      for (const s of strokesList) {
+        if (s.box.right > maxRight) maxRight = s.box.right;
+        if (s.box.top < minTop) minTop = s.box.top;
+        if (s.box.height < 11 && s.box.width >= 4 && s.box.width < 28 && s.box.width > s.box.height) {
+          crossbarCount++;
+        }
+      }
+      const hasTrailingAccent = strokesList.length >= 2 && strokesList.some(
+        s => s.box.height < 11 && s.box.width < 22 && s.box.right >= maxRight - 24 && s.box.top <= minTop + 14
+      );
+
+      let bestText = candidates[0].trim();
+      let bestScore = -Infinity;
+
+      const limit = Math.min(candidates.length, 10);
+      for (let i = 0; i < limit; i++) {
+        const raw = candidates[i].trim();
+        if (!raw) continue;
+        const normalized = applyPersonalAndItalianRules(raw);
+        let score = 100 - i * 8;
+
+        // Penalizza rumori da 't' spezzata (es. "sl-tuazione", "l-")
+        if (/[a-zA-Z][-_|/\\][a-zA-Z]/.test(normalized)) score -= 28;
+        if (crossbarCount > 0) {
+          const tMatches = (normalized.toLowerCase().match(/t/g) || []).length;
+          if (tMatches > 0) score += Math.min(12, tMatches * 5);
+          if (/\b[li]\s*[-–]\s*[a-zA-Z]/.test(normalized)) score -= 22;
+        }
+        if (hasTrailingAccent && /[àèéìòùÀÈÉÌÒÙ]/.test(normalized)) score += 14;
+        if (normalized !== raw) score += 10;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestText = normalized;
+        }
+      }
+      return bestText;
+    }
+
+    // Riconoscimento REALE con de-inclinazione opzionale, pre_context e Top-10 Smart Re-Ranking
+    async function recognizeStrokesReal(strokesList, preContext = '', returnRawFirst = false) {
+      if (!strokesList || strokesList.length === 0) return '';
+      try {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const s of strokesList) {
+          if (s.box.minX < minX) minX = s.box.minX;
+          if (s.box.minY < minY) minY = s.box.minY;
+          if (s.box.maxX > maxX) maxX = s.box.maxX;
+          if (s.box.maxY > maxY) maxY = s.box.maxY;
+        }
+
+        const slantCorr = Math.abs(calibrationProfile.slantShear) > 0.14
+          ? calibrationProfile.slantShear * 0.5
+          : 0;
+
+        let timeOffset = 0;
+        const inkTrace = strokesList.map(s => {
+          const xs = s.points.map(p => Math.round(slantCorr ? p.x + slantCorr * (p.y - maxY) : p.x));
           const ys = s.points.map(p => Math.round(p.y));
-          const ts = s.points.map((p, idx) => p.t || idx * 16);
+          const ts = s.points.map((p, idx) => timeOffset + (p.t || idx * 14));
+          timeOffset = (ts[ts.length - 1] || timeOffset) + 60;
           return [xs, ys, ts];
         });
 
+        const cleanContext = (preContext || '').trim().slice(-20);
+        const reqObj = {
+          writing_guide: {
+            writing_area_width: Math.max(120, Math.round(maxX - minX + 40)),
+            writing_area_height: Math.max(60, Math.round(maxY - minY + 30))
+          },
+          ink: inkTrace,
+          language: 'it'
+        };
+        if (cleanContext) reqObj.pre_context = cleanContext;
+
         const payload = {
           options: 'enable_pre_space',
-          requests: [{
-            writing_guide: {
-              writing_area_width: Math.max(100, Math.round(boxWidth)),
-              writing_area_height: Math.max(50, Math.round(boxHeight))
-            },
-            ink: inkTrace,
-            language: 'it'
-          }]
+          requests: [reqObj]
         };
 
         const response = await fetch(
@@ -848,26 +1306,209 @@
         );
 
         const data = await response.json();
-        // Formato risposta: ["SUCCESS", [ [id, ["testo riconosciuto 1", "alternativa 2", ...]] ]]
         if (data && data[0] === 'SUCCESS' && data[1] && data[1][0] && data[1][0][1]) {
           const candidates = data[1][0][1];
-          if (candidates.length > 0 && candidates[0].trim().length > 0) {
-            return candidates[0];
+          if (candidates.length > 0) {
+            if (returnRawFirst) return candidates[0].trim();
+            return selectBestCandidate(candidates, strokesList);
           }
         }
       } catch (err) {
         console.warn('Errore chiamata riconoscimento scrittura:', err);
       }
-      return '[Testo non riconosciuto - controlla la connessione]';
+      return '';
     }
 
-    async function convertPendingStrokesToText(ctx, page) {
-      if (pendingStrokes.length === 0) return;
-      const strokes = [...pendingStrokes];
-      pendingStrokes = [];
+    // Divide una riga di tratti in Gruppi Posizionati usando la soglia calibrata dell'utente:
+    function buildPositionedGroupsForLine(lineStrokes, mergeSameLine = true) {
+      const gapThreshold = calibrationProfile.wordGapThreshold || 13.0;
+      const byX = lineStrokes
+        .map((s, idx) => ({ s, origOrder: idx }))
+        .sort((a, b) => a.s.box.minX - b.s.box.minX);
+
+      const words = [];
+      for (const item of byX) {
+        const s = item.s;
+        const prevWord = words[words.length - 1];
+        if (prevWord && s.box.minX <= prevWord.maxX + gapThreshold) {
+          prevWord.items.push(item);
+          prevWord.maxX = Math.max(prevWord.maxX, s.box.maxX);
+        } else {
+          words.push({
+            items: [item],
+            minX: s.box.minX,
+            maxX: s.box.maxX
+          });
+        }
+      }
+
+      // Ripristina l'ordine cronologico dei tratti dentro ciascuna parola
+      const orderedWords = words.map(w => ({
+        minX: w.minX,
+        maxX: w.maxX,
+        strokes: w.items.sort((a, b) => a.origOrder - b.origOrder).map(it => it.s)
+      }));
+
+      const positionedGroups = [];
+      if (mergeSameLine) {
+        if (orderedWords.length > 0) {
+          positionedGroups.push({
+            minX: orderedWords[0].minX,
+            maxX: orderedWords[orderedWords.length - 1].maxX,
+            words: orderedWords
+          });
+        }
+      } else {
+        for (const word of orderedWords) {
+          const prevGroup = positionedGroups[positionedGroups.length - 1];
+          if (prevGroup && (word.minX - prevGroup.maxX) <= 24) {
+            prevGroup.words.push(word);
+            prevGroup.maxX = Math.max(prevGroup.maxX, word.maxX);
+          } else {
+            positionedGroups.push({
+              minX: word.minX,
+              maxX: word.maxX,
+              words: [word]
+            });
+          }
+        }
+      }
+
+      // Dentro ciascun gruppo posizionato, crea sub-chunk da max 3 parole / 16 tratti per OCR accurato
+      return positionedGroups.map(group => {
+        const chunks = [];
+        let currentChunk = [];
+        let wordsInChunk = 0;
+
+        for (const w of group.words) {
+          if (
+            currentChunk.length > 0 &&
+            (wordsInChunk >= 3 || currentChunk.length + w.strokes.length > 16)
+          ) {
+            chunks.push(currentChunk);
+            currentChunk = [];
+            wordsInChunk = 0;
+          }
+          currentChunk.push(...w.strokes);
+          wordsInChunk++;
+        }
+        if (currentChunk.length > 0) chunks.push(currentChunk);
+
+        return {
+          minX: group.minX,
+          allStrokes: group.words.flatMap(w => w.strokes),
+          ocrChunks: chunks
+        };
+      });
+    }
+
+    function getStrokeVerticalStats(s) {
+      const ys = s.points.map(p => p.y).sort((a, b) => a - b);
+      const medianY = ys[Math.floor((ys.length - 1) * 0.50)] ?? s.box.minY;
+      const baselineY = ys[Math.floor((ys.length - 1) * 0.75)] ?? s.box.maxY;
+      const paperRow = bgTemplate === 'ruled'
+        ? Math.round((baselineY - 56) / 24)
+        : null;
+      return { medianY, baselineY, paperRow };
+    }
+
+    function clusterStrokesByLine(strokes) {
+      const mainStrokes = [];
+      const diacritics = [];
+      for (const s of strokes) {
+        // Puntini delle 'i', accenti (à, è, ò) e sbarre orizzontali delle 't'
+        const isSmallDiacriticOrCrossbar = s.box.height < 11 && s.box.width < 28;
+        if (isSmallDiacriticOrCrossbar) diacritics.push(s);
+        else mainStrokes.push(s);
+      }
+
+      const seedStrokes = mainStrokes.length > 0 ? mainStrokes : strokes;
+      const lines = [];
+
+      for (const s of seedStrokes) {
+        const stats = getStrokeVerticalStats(s);
+        let bestLine = null;
+        let bestScore = Infinity;
+
+        for (const l of lines) {
+          let isSameLine = false;
+          if (bgTemplate === 'ruled' && l.paperRow !== null && stats.paperRow !== null) {
+            isSameLine = (l.paperRow === stats.paperRow);
+          } else {
+            const baseDist = Math.abs(l.baselineY - stats.baselineY);
+            const medDist = Math.abs(l.medianY - stats.medianY);
+            isSameLine = baseDist <= 13 && medDist <= 13;
+          }
+
+          if (isSameLine) {
+            const dist = Math.abs(l.baselineY - stats.baselineY);
+            if (dist < bestScore) {
+              bestScore = dist;
+              bestLine = l;
+            }
+          }
+        }
+
+        if (bestLine) {
+          const n = bestLine.strokes.length;
+          bestLine.strokes.push(s);
+          bestLine.minX = Math.min(bestLine.minX, s.box.minX);
+          bestLine.minY = Math.min(bestLine.minY, s.box.minY);
+          bestLine.maxX = Math.max(bestLine.maxX, s.box.maxX);
+          bestLine.maxY = Math.max(bestLine.maxY, s.box.maxY);
+          bestLine.height = bestLine.maxY - bestLine.minY;
+          bestLine.baselineY = (bestLine.baselineY * n + stats.baselineY) / (n + 1);
+          bestLine.medianY = (bestLine.medianY * n + stats.medianY) / (n + 1);
+          bestLine.centerY = (bestLine.minY + bestLine.maxY) / 2;
+        } else {
+          lines.push({
+            strokes: [s],
+            minX: s.box.minX,
+            minY: s.box.minY,
+            maxX: s.box.maxX,
+            maxY: s.box.maxY,
+            height: s.box.height,
+            baselineY: stats.baselineY,
+            medianY: stats.medianY,
+            paperRow: stats.paperRow,
+            centerY: (s.box.minY + s.box.maxY) / 2
+          });
+        }
+      }
+
+      // Riattacca accenti, puntini delle 'i' e sbarre delle 't' alla riga sottostante/corrispondente
+      // (senza fargli cambiare riga verso l'alto se si trovano vicino al bordo tra due righe!)
+      if (mainStrokes.length > 0) {
+        for (const dot of diacritics) {
+          const dotCenterY = (dot.box.minY + dot.box.maxY) / 2;
+          let targetLine = lines[0];
+          let minScore = Infinity;
+          for (const l of lines) {
+            const hMatch = dot.box.maxX >= l.minX - 12 && dot.box.minX <= l.maxX + 12;
+            // Un accento o sbarra della 't' si trova di solito dentro o poco SOPRA la riga a cui appartiene
+            const isAboveOrInsideLine = dotCenterY <= l.maxY + 4 && dotCenterY >= l.minY - 22;
+            const vDist = Math.abs(l.centerY - dotCenterY);
+            const score = vDist + (hMatch ? 0 : 120) + (isAboveOrInsideLine ? 0 : 60);
+            if (score < minScore) {
+              minScore = score;
+              targetLine = l;
+            }
+          }
+          targetLine.strokes.push(dot);
+        }
+      }
+
+      lines.sort((a, b) => a.minY - b.minY);
+      return lines;
+    }
+
+    async function convertBatchToText(ctx, page, rawBatchStrokes, isContinuousWithPrevious = false) {
+      // Verifica che i tratti esistano ancora sulla pagina (es. non cancellati da Gomma/Undo)
+      const existingIds = new Set(page.elements.map(e => e.id));
+      const strokes = rawBatchStrokes.filter(s => existingIds.has(s.id));
+      if (strokes.length === 0) return;
 
       // 1. Classificatore Testo vs Figura:
-      // Se è un singolo grande cerchio chiuso o una lunga linea dritta, NON convertirlo!
       if (strokes.length === 1) {
         const s = strokes[0];
         const first = s.points[0];
@@ -881,83 +1522,230 @@
         }
       }
 
-      // 2. Raggruppamento in righe (Rilevamento A-Capo \n)
-      const sorted = [...strokes].sort((a, b) => ((a.box.minY + a.box.maxY) / 2) - ((b.box.minY + b.box.maxY) / 2));
-      const lines = [];
-      sorted.forEach(s => {
-        const centerY = (s.box.minY + s.box.maxY) / 2;
-        const match = lines.find(l => Math.abs(l.centerY - centerY) <= Math.max(18, l.height * 0.65));
-        if (match) {
-          match.strokes.push(s);
-          match.minX = Math.min(match.minX, s.box.minX);
-          match.minY = Math.min(match.minY, s.box.minY);
-          match.maxX = Math.max(match.maxX, s.box.maxX);
-          match.maxY = Math.max(match.maxY, s.box.maxY);
-          match.height = match.maxY - match.minY;
-          match.centerY = (match.minY + match.maxY) / 2;
-        } else {
-          lines.push({
-            strokes: [s],
-            minX: s.box.minX,
-            minY: s.box.minY,
-            maxX: s.box.maxX,
-            maxY: s.box.maxY,
-            height: s.box.height,
-            centerY
-          });
+      // 2. Raggruppamento accurato in righe
+      const lines = clusterStrokesByLine(strokes);
+
+      // 3. Processa e stampa OGNI RIGA nella sua esatta posizione originale (X e Y indipendenti!)
+      for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+        const line = lines[lineIdx];
+        let resolvedFontSize = sizeMode === 'adaptiveSnap'
+          ? resolveAdaptiveFontSizeWithMemory(line.strokes)
+          : fixedFontSize;
+
+        const lineBaselineRaw = estimateInkBaselineY(line.strokes);
+        let targetBaselineY = snapBaselineToPaperLine(lineBaselineRaw, bgTemplate);
+
+        // Verifica se siamo in scrittura CONTINUA da una riga superiore (senza pausa):
+        // - lineIdx > 0 dentro lo stesso batch continuo, OPPURE
+        // - lineIdx === 0 con isContinuousWithPrevious === true
+        let continuousTailElement = null;
+        if (mergeOnSameLineEnabled && (lineIdx > 0 || isContinuousWithPrevious)) {
+          if (lastFlowPageIndex === page.index && lastFlowTailElementId) {
+            const candidateTail = page.elements.find(
+              el => el.type === 'text' && el.id === lastFlowTailElementId
+            );
+            if (candidateTail) {
+              const tailBase = candidateTail.baselineY !== undefined
+                ? candidateTail.baselineY
+                : (candidateTail.y + getFontAscent(ctx, candidateTail.fontSize));
+              // Accorpa se la nuova riga continua sullo stesso livello o subito sotto (a capo continuo)
+              if (lineBaselineRaw >= tailBase - 14) {
+                continuousTailElement = candidateTail;
+                targetBaselineY = tailBase;
+                if (sizeMode === 'adaptiveSnap') {
+                  const sizeDiffRatio = Math.abs(resolvedFontSize - candidateTail.fontSize) / Math.max(1, candidateTail.fontSize);
+                  if (sizeDiffRatio <= 0.45) {
+                    resolvedFontSize = candidateTail.fontSize;
+                  }
+                }
+              }
+            }
+          }
         }
-      });
 
-      lines.sort((a, b) => a.minY - b.minY);
-      // Ordina i tratti da sinistra a destra dentro ogni riga
-      lines.forEach(line => {
-        line.strokes.sort((a, b) => a.box.minX - b.box.minX);
-      });
+        // Altrimenti controlla se esiste già testo sulla stessa riga orizzontale (a sinistra/destra):
+        let matchedSameLineRightElement = continuousTailElement;
+        if (!matchedSameLineRightElement) {
+          for (const el of page.elements) {
+            if (el.type !== 'text') continue;
+            ctx.save();
+            ctx.font = `500 ${el.fontSize}px Inter, Roboto, sans-serif`;
+            const elWidth = ctx.measureText(el.text.split('\n')[0]).width;
+            ctx.restore();
+            const isToRight = line.minX >= el.x + elWidth - 12;
+            const horizontallyDisjoint = isToRight || (line.maxX <= el.x + 8);
+            if (!horizontallyDisjoint) continue;
 
-      const anchorX = Math.min(...lines.map(l => l.minX));
-      const anchorY = Math.min(...lines.map(l => l.minY));
-      const maxLineHeight = Math.max(...lines.map(l => l.height));
+            const elBaseline0 = el.baselineY !== undefined ? el.baselineY : (el.y + getFontAscent(ctx, el.fontSize));
+            const existingLinesCount = el.text.split('\n').length;
+            let matched = false;
+            for (let li = 0; li < existingLinesCount; li++) {
+              const existingLineBaseline = elBaseline0 + li * (el.fontSize * 1.35);
+              const sameLineTolerance = Math.min(11, Math.max(7, el.fontSize * 0.55));
+              const samePaperRow = (bgTemplate === 'ruled' || bgTemplate === 'grid')
+                ? Math.abs(targetBaselineY - existingLineBaseline) < 3
+                : Math.abs(lineBaselineRaw - existingLineBaseline) <= sameLineTolerance;
+              if (samePaperRow) {
+                targetBaselineY = existingLineBaseline;
+                if (sizeMode === 'adaptiveSnap') {
+                  const sizeDiffRatio = Math.abs(resolvedFontSize - el.fontSize) / Math.max(1, el.fontSize);
+                  if (sizeDiffRatio <= 0.45) {
+                    resolvedFontSize = el.fontSize;
+                  }
+                }
+                if (isToRight && li === existingLinesCount - 1) {
+                  matchedSameLineRightElement = el;
+                }
+                matched = true;
+                break;
+              }
+            }
+            if (matched) break;
+          }
+        }
 
-      const resolvedFontSize = sizeMode === 'adaptiveSnap'
-        ? snapHeightToStyle(maxLineHeight)
-        : fixedFontSize;
+        // Se "Accorpa Riga" è attivo, riunisce tutto con spazi singoli e va a capo a fine riga;
+        // se disattivato, lascia le parole separate esattamente dove sono state scritte.
+        const positionedGroups = buildPositionedGroupsForLine(line.strokes, mergeOnSameLineEnabled);
+        const finalAscent = getFontAscent(ctx, resolvedFontSize);
+        const lineStep = bgTemplate === 'ruled' ? 24 : (resolvedFontSize * 1.35);
 
-      // Mostra indicatore mentre riconosce riga per riga ciò che hai scritto davvero
-      ocrBadge.classList.add('visible');
-      ocrCountdownEl.textContent = '...';
+        for (const group of positionedGroups) {
+          const recognizedParts = [];
+          let runningContext = matchedSameLineRightElement ? matchedSameLineRightElement.text : '';
+          for (const chunk of group.ocrChunks) {
+            const part = await recognizeStrokesReal(chunk, runningContext);
+            if (part) {
+              recognizedParts.push(part);
+              runningContext = `${runningContext} ${part}`.trim();
+            }
+          }
 
-      const recognizedLines = [];
-      for (let idx = 0; idx < lines.length; idx++) {
-        const line = lines[idx];
-        const indentSpaces = Math.max(0, Math.round((line.minX - anchorX - 18) / 8));
-        const rawRecognized = await recognizeLineStrokesReal(line, A4_WIDTH, A4_HEIGHT);
-        recognizedLines.push(' '.repeat(indentSpaces) + rawRecognized);
+          const groupText = recognizedParts.join(' ').replace(/[ \t]+/g, ' ').trim();
+          if (!groupText) continue;
+
+          const groupStrokeIds = new Set(group.allStrokes.map(s => s.id));
+          page.elements = page.elements.filter(el => !groupStrokeIds.has(el.id));
+
+          if (mergeOnSameLineEnabled) {
+            // Unisce al testo già presente sulla stessa riga (o alla riga precedente se scrittura continua)
+            const anchorEl = matchedSameLineRightElement;
+            const startX = anchorEl ? anchorEl.x : group.minX;
+            const maxLineWidth = Math.max(120, (A4_WIDTH - 28) - startX);
+            const combinedWords = (anchorEl ? `${anchorEl.text} ${groupText}` : groupText)
+              .trim()
+              .split(/\s+/)
+              .filter(Boolean);
+
+            ctx.save();
+            ctx.font = `500 ${resolvedFontSize}px Inter, Roboto, sans-serif`;
+            const wrappedLines = [];
+            let curLine = '';
+            for (const w of combinedWords) {
+              const cand = curLine ? `${curLine} ${w}` : w;
+              if (curLine && ctx.measureText(cand).width > maxLineWidth) {
+                wrappedLines.push(curLine);
+                curLine = w;
+              } else {
+                curLine = cand;
+              }
+            }
+            if (curLine) wrappedLines.push(curLine);
+            ctx.restore();
+
+            if (anchorEl) {
+              const previousText = anchorEl.text;
+              anchorEl.text = wrappedLines[0];
+              const createdOverflowIds = [];
+              let tailEl = anchorEl;
+
+              for (let wi = 1; wi < wrappedLines.length; wi++) {
+                const nextBaseY = targetBaselineY + wi * lineStep;
+                const overflowEl = {
+                  id: 'txt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + '_' + wi,
+                  type: 'text',
+                  x: startX,
+                  y: nextBaseY - finalAscent,
+                  baselineY: nextBaseY,
+                  color: anchorEl.color,
+                  fontSize: resolvedFontSize,
+                  text: wrappedLines[wi]
+                };
+                page.elements.push(overflowEl);
+                createdOverflowIds.push(overflowEl.id);
+                tailEl = overflowEl;
+              }
+
+              lastFlowTailElementId = tailEl.id;
+              lastFlowPageIndex = page.index;
+              matchedSameLineRightElement = tailEl;
+
+              undoStack.push({
+                type: 'mergeConvert',
+                pageIndex: page.index,
+                targetElementId: anchorEl.id,
+                previousText,
+                addedTextIds: createdOverflowIds,
+                removedStrokes: group.allStrokes
+              });
+            } else {
+              const createdIds = [];
+              let tailEl = null;
+              for (let wi = 0; wi < wrappedLines.length; wi++) {
+                const lineBaseY = targetBaselineY + wi * lineStep;
+                const newEl = {
+                  id: 'txt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + '_' + wi,
+                  type: 'text',
+                  x: startX,
+                  y: lineBaseY - finalAscent,
+                  baselineY: lineBaseY,
+                  color: group.allStrokes[0].color,
+                  fontSize: resolvedFontSize,
+                  text: wrappedLines[wi]
+                };
+                page.elements.push(newEl);
+                createdIds.push(newEl.id);
+                tailEl = newEl;
+              }
+
+              if (tailEl) {
+                lastFlowTailElementId = tailEl.id;
+                lastFlowPageIndex = page.index;
+                matchedSameLineRightElement = tailEl;
+              }
+
+              undoStack.push({
+                type: 'convertMulti',
+                pageIndex: page.index,
+                addedTextIds: createdIds,
+                removedStrokes: group.allStrokes
+              });
+            }
+          } else {
+            // Modalità libera: mantiene ogni blocco separato esattamente alla X in cui è stato scritto
+            const textEl = {
+              id: 'txt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+              type: 'text',
+              x: group.minX,
+              y: targetBaselineY - finalAscent,
+              baselineY: targetBaselineY,
+              color: group.allStrokes[0].color,
+              fontSize: resolvedFontSize,
+              text: groupText
+            };
+            page.elements.push(textEl);
+
+            undoStack.push({
+              type: 'convert',
+              pageIndex: page.index,
+              removedStrokes: group.allStrokes,
+              addedTextId: textEl.id
+            });
+          }
+
+          drawPageCanvas(ctx, page);
+        }
       }
-
-      ocrBadge.classList.remove('visible');
-
-      const textEl = {
-        id: 'txt_' + Date.now(),
-        type: 'text',
-        x: anchorX,
-        y: anchorY,
-        color: strokes[0].color,
-        fontSize: resolvedFontSize,
-        text: recognizedLines.join('\n')
-      };
-
-      const strokeIds = new Set(strokes.map(s => s.id));
-      page.elements = page.elements.filter(el => !strokeIds.has(el.id));
-      page.elements.push(textEl);
-
-      undoStack.push({
-        type: 'convert',
-        pageIndex: page.index,
-        removedStrokes: strokes,
-        addedTextId: textEl.id
-      });
-
-      drawPageCanvas(ctx, page);
     }
 
     // Gestione Circonferenza "Pull-Up & Hold" per sblocco Pagina successiva
@@ -1073,6 +1861,16 @@
       e.currentTarget.textContent = autoOcrEnabled ? '✨ Auto-Testo: ON' : '✨ Auto-Testo: OFF';
     });
 
+    document.getElementById('toggleMergeLineBtn').addEventListener('click', e => {
+      mergeOnSameLineEnabled = !mergeOnSameLineEnabled;
+      e.currentTarget.classList.toggle('active', mergeOnSameLineEnabled);
+      e.currentTarget.textContent = mergeOnSameLineEnabled ? '🔗 Accorpa Riga: ON' : '🔗 Accorpa Riga: OFF';
+    });
+
+    document.getElementById('ocrDelaySelect').addEventListener('change', e => {
+      ocrDelayMs = parseInt(e.target.value, 10) || 1800;
+    });
+
     document.getElementById('togglePenOnlyBtn').addEventListener('click', e => {
       penOnlyMode = !penOnlyMode;
       e.currentTarget.classList.toggle('active', penOnlyMode);
@@ -1085,6 +1883,10 @@
 
     document.getElementById('sizeModeSelect').addEventListener('change', e => {
       sizeMode = e.target.value;
+      const isBetaSnap = sizeMode === 'adaptiveSnap';
+      e.target.style.color = isBetaSnap ? '#dc2626' : '#1e293b';
+      e.target.style.fontWeight = isBetaSnap ? '600' : '500';
+      e.target.style.borderColor = isBetaSnap ? '#fca5a5' : '#e2e8f0';
       document.getElementById('fixedFontSizeSelect').style.display =
         sizeMode === 'fixedFromToolbar' ? 'inline-flex' : 'none';
     });
@@ -1098,6 +1900,130 @@
       renderAllPages();
     });
 
+    // Verifica se un punto (px, py) è dentro il poligono tracciato dal lazo (Ray Casting)
+    function isPointInPolygon(px, py, polygon) {
+      let inside = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].x, yi = polygon[i].y;
+        const xj = polygon[j].x, yj = polygon[j].y;
+        const intersect = ((yi > py) !== (yj > py)) &&
+          (px < (xj - xi) * (py - yi) / ((yj - yi) || 0.00001) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    // Riformatta tutto il testo cerchiato:
+    // - Compatta ogni spazio in spazi singoli (' ')
+    // - Riempie il più possibile ogni riga fino al margine destro A4 tirando su le parole dalle righe sotto!
+    function reflowCircledTexts(ctx, page, lassoPoints) {
+      if (!lassoPoints || lassoPoints.length < 3) return;
+
+      const selectedTexts = [];
+      for (const el of page.elements) {
+        if (el.type !== 'text') continue;
+        ctx.save();
+        ctx.font = `500 ${el.fontSize}px Inter, Roboto, sans-serif`;
+        const firstLineWidth = Math.max(20, ctx.measureText(el.text.split('\n')[0]).width);
+        ctx.restore();
+
+        const baseLineY = el.baselineY !== undefined ? el.baselineY : (el.y + getFontAscent(ctx, el.fontSize));
+        const midY = baseLineY - el.fontSize * 0.35;
+        const hit =
+          isPointInPolygon(el.x + firstLineWidth * 0.5, midY, lassoPoints) ||
+          isPointInPolygon(el.x + firstLineWidth * 0.2, midY, lassoPoints) ||
+          isPointInPolygon(el.x + firstLineWidth * 0.8, midY, lassoPoints);
+
+        if (hit) selectedTexts.push(el);
+      }
+
+      if (selectedTexts.length === 0) return;
+
+      // 1. Raggruppa gli elementi selezionati per riga orizzontale (per mantenere l'ordine di lettura)
+      const rowGroups = [];
+      for (const el of selectedTexts) {
+        const elBase = el.baselineY !== undefined ? el.baselineY : (el.y + getFontAscent(ctx, el.fontSize));
+        let row = rowGroups.find(r => Math.abs(r.baselineY - elBase) <= Math.max(12, el.fontSize * 0.65));
+        if (row) {
+          row.items.push(el);
+        } else {
+          rowGroups.push({ baselineY: elBase, items: [el] });
+        }
+      }
+
+      rowGroups.sort((a, b) => a.baselineY - b.baselineY);
+
+      // 2. Estrae tutte le singole parole in ordine di lettura (alto->basso, sinistra->destra)
+      const allWords = [];
+      for (const row of rowGroups) {
+        row.items.sort((a, b) => a.x - b.x);
+        for (const item of row.items) {
+          const wordsInItem = item.text.trim().split(/\s+/).filter(Boolean);
+          allWords.push(...wordsInItem);
+        }
+      }
+
+      if (allWords.length === 0) return;
+
+      // 3. Calcola i limiti di riga (X iniziale e margine destro del foglio A4)
+      const startX = Math.min(...rowGroups[0].items.map(i => i.x));
+      const rightMargin = A4_WIDTH - 28;
+      const maxLineWidth = Math.max(120, rightMargin - startX);
+      const refItem = rowGroups[0].items[0];
+      const fontSize = refItem.fontSize;
+      const color = refItem.color;
+      const ascent = getFontAscent(ctx, fontSize);
+      const defaultLineStep = bgTemplate === 'ruled' ? 24 : (fontSize * 1.35);
+
+      // 4. Riempie ogni riga il più possibile (Greedy Line Packing) prima di andare a capo
+      ctx.save();
+      ctx.font = `500 ${fontSize}px Inter, Roboto, sans-serif`;
+      const packedLines = [];
+      let currentLine = '';
+
+      for (const word of allWords) {
+        const candidate = currentLine ? `${currentLine} ${word}` : word;
+        if (currentLine && ctx.measureText(candidate).width > maxLineWidth) {
+          packedLines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = candidate;
+        }
+      }
+      if (currentLine) packedLines.push(currentLine);
+      ctx.restore();
+
+      // 5. Crea i nuovi blocchi posizionati sulle righe disponibili (riempiendo dall'alto verso il basso)
+      const newElements = [];
+      for (let idx = 0; idx < packedLines.length; idx++) {
+        const targetBaseY = idx < rowGroups.length
+          ? rowGroups[idx].baselineY
+          : (rowGroups[rowGroups.length - 1].baselineY + (idx - rowGroups.length + 1) * defaultLineStep);
+
+        newElements.push({
+          id: 'txt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + '_' + idx,
+          type: 'text',
+          x: startX,
+          y: targetBaseY - ascent,
+          baselineY: targetBaseY,
+          color,
+          fontSize,
+          text: packedLines[idx]
+        });
+      }
+
+      const oldIds = new Set(selectedTexts.map(e => e.id));
+      page.elements = page.elements.filter(el => !oldIds.has(el.id));
+      page.elements.push(...newElements);
+
+      undoStack.push({
+        type: 'reflow',
+        pageIndex: page.index,
+        oldElements: selectedTexts,
+        newIds: newElements.map(e => e.id)
+      });
+    }
+
     document.getElementById('undoBtn').addEventListener('click', () => {
       const last = undoStack.pop();
       if (!last) return;
@@ -1107,6 +2033,23 @@
         const p = pages[last.pageIndex];
         p.elements = p.elements.filter(el => el.id !== last.addedTextId);
         p.elements.push(...last.removedStrokes);
+      } else if (last.type === 'convertMulti') {
+        const p = pages[last.pageIndex];
+        const addedSet = new Set(last.addedTextIds);
+        p.elements = p.elements.filter(el => !addedSet.has(el.id));
+        p.elements.push(...last.removedStrokes);
+      } else if (last.type === 'mergeConvert') {
+        const p = pages[last.pageIndex];
+        const target = p.elements.find(el => el.id === last.targetElementId);
+        if (target) target.text = last.previousText;
+        const addedSet = new Set(last.addedTextIds);
+        p.elements = p.elements.filter(el => !addedSet.has(el.id));
+        p.elements.push(...last.removedStrokes);
+      } else if (last.type === 'reflow') {
+        const p = pages[last.pageIndex];
+        const newIdSet = new Set(last.newIds);
+        p.elements = p.elements.filter(el => !newIdSet.has(el.id));
+        p.elements.push(...last.oldElements);
       } else if (last.type === 'add') {
         const p = pages[last.pageIndex];
         p.elements = p.elements.filter(el => el.id !== last.elementId);
@@ -1114,7 +2057,238 @@
       renderAllPages();
     });
 
+    saveCalibrationProfile();
     renderAllPages();
+    // Centra il foglio A4 al centro dello schermo all'avvio
+    requestAnimationFrame(() => {
+      workspace.scrollLeft = (workspace.scrollWidth - workspace.clientWidth) / 2;
+    });
+
+    // -------------------------------------------------------------------------
+    // Procedura Guidata di Calibrazione Calligrafia (3 Frasi Offline)
+    // -------------------------------------------------------------------------
+    const CALIBRATION_PHRASES = [
+      {
+        title: 'Calibrazione (1/3) — Spazi, doppie e taglio delle "t"',
+        text: 'Oggi tutto funziona perfettamente',
+        hint: 'Scrivi col tuo ritmo naturale (corsivo o stampatello).'
+      },
+      {
+        title: 'Calibrazione (2/3) — Parole lunghe e accenti italiani',
+        text: 'La situazione in città è già più chiara perché',
+        hint: 'Aggiungi gli accenti e i tagli delle "t" come fai di solito.'
+      },
+      {
+        title: 'Calibrazione (3/3) — Altezza lettere, numeri e discendenti',
+        text: 'Appunti di pagina 4 con qualche dettaglio',
+        hint: 'Taratura automatica di Auto-Snap e inclinazione personale.'
+      }
+    ];
+
+    const calModal = document.getElementById('calModal');
+    const calCanvas = document.getElementById('calCanvas');
+    const calCtx = calCanvas.getContext('2d');
+    let calIdx = 0;
+    let calSamples = [];
+    let calStrokes = [];
+    let calActivePoints = [];
+    let calDrawing = false;
+    let calStartTime = 0;
+
+    function redrawCalPad() {
+      calCtx.clearRect(0, 0, calCanvas.width, calCanvas.height);
+      calCtx.strokeStyle = '#e2e8f0';
+      calCtx.lineWidth = 1;
+      calCtx.beginPath();
+      calCtx.moveTo(0, calCanvas.height * 0.68);
+      calCtx.lineTo(calCanvas.width, calCanvas.height * 0.68);
+      calCtx.stroke();
+
+      calCtx.strokeStyle = '#1e293b';
+      calCtx.lineWidth = 2.5;
+      calCtx.lineCap = 'round';
+      calCtx.lineJoin = 'round';
+      for (const s of calStrokes) {
+        if (s.points.length < 2) continue;
+        calCtx.beginPath();
+        s.points.forEach((p, i) => i === 0 ? calCtx.moveTo(p.x, p.y) : calCtx.lineTo(p.x, p.y));
+        calCtx.stroke();
+      }
+      if (calActivePoints.length >= 2) {
+        calCtx.beginPath();
+        calActivePoints.forEach((p, i) => i === 0 ? calCtx.moveTo(p.x, p.y) : calCtx.lineTo(p.x, p.y));
+        calCtx.stroke();
+      }
+    }
+
+    function updateCalUi() {
+      const p = CALIBRATION_PHRASES[calIdx];
+      document.getElementById('calTitle').textContent = p.title;
+      document.getElementById('calTargetPhrase').textContent = p.text;
+      document.getElementById('calHint').textContent = p.hint;
+      document.getElementById('calNextBtn').textContent =
+        calIdx < 2 ? `Avanti (${calIdx + 1}/3)` : 'Completa Calibrazione';
+      redrawCalPad();
+    }
+
+    calCanvas.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+    calCanvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+    calCanvas.addEventListener('pointerdown', e => {
+      if (isProbablePalm(e)) return;
+      if (penOnlyMode && e.pointerType === 'touch') return;
+      calDrawing = true;
+      calStartTime = Date.now();
+      try { calCanvas.setPointerCapture(e.pointerId); } catch (_) {}
+      const rect = calCanvas.getBoundingClientRect();
+      calActivePoints = [{
+        x: (e.clientX - rect.left) * (calCanvas.width / rect.width),
+        y: (e.clientY - rect.top) * (calCanvas.height / rect.height),
+        t: 0
+      }];
+      redrawCalPad();
+    });
+
+    calCanvas.addEventListener('pointermove', e => {
+      if (!calDrawing) return;
+      const rect = calCanvas.getBoundingClientRect();
+      calActivePoints.push({
+        x: (e.clientX - rect.left) * (calCanvas.width / rect.width),
+        y: (e.clientY - rect.top) * (calCanvas.height / rect.height),
+        t: Date.now() - calStartTime
+      });
+      redrawCalPad();
+    });
+
+    calCanvas.addEventListener('pointerup', () => {
+      if (!calDrawing) return;
+      calDrawing = false;
+      if (calActivePoints.length >= 2) {
+        calStrokes.push({
+          points: calActivePoints,
+          box: getBoundingBox(calActivePoints)
+        });
+      }
+      calActivePoints = [];
+      redrawCalPad();
+    });
+
+    document.getElementById('openCalibrateBtn').addEventListener('click', () => {
+      calIdx = 0;
+      calSamples = [];
+      calStrokes = [];
+      calActivePoints = [];
+      updateCalUi();
+      calModal.classList.add('open');
+    });
+
+    document.getElementById('calCancelBtn').addEventListener('click', () => {
+      calModal.classList.remove('open');
+    });
+
+    document.getElementById('calClearBtn').addEventListener('click', () => {
+      calStrokes = [];
+      calActivePoints = [];
+      redrawCalPad();
+    });
+
+    document.getElementById('calNextBtn').addEventListener('click', async () => {
+      if (calStrokes.length === 0) return;
+      const targetPhrase = CALIBRATION_PHRASES[calIdx].text;
+      const rawRecognized = await recognizeStrokesReal(calStrokes, '', true);
+      calSamples.push({
+        targetText: targetPhrase,
+        strokes: calStrokes,
+        rawRecognized
+      });
+
+      if (calIdx < CALIBRATION_PHRASES.length - 1) {
+        calIdx++;
+        calStrokes = [];
+        calActivePoints = [];
+        updateCalUi();
+      } else {
+        // Calcola il profilo leggero (gap lettere/parole, altezza tipica, inclinazione, correzioni personali)
+        const wordGaps = [], letterGaps = [], heights = [], slants = [];
+        const corrections = { ...calibrationProfile.personalCorrections };
+
+        for (const smp of calSamples) {
+          for (const s of smp.strokes) {
+            if (s.box.height >= 8) heights.push(s.box.height);
+            if (s.box.height >= 12 && s.points.length >= 2) {
+              const dy = s.points[s.points.length - 1].y - s.points[0].y;
+              if (Math.abs(dy) >= 10) {
+                const shear = Math.max(-0.35, Math.min(0.35, (s.points[0].x - s.points[s.points.length - 1].x) / dy));
+                slants.push(shear);
+              }
+            }
+          }
+
+          const targetWords = smp.targetText.trim().split(/\s+/).filter(Boolean);
+          const expectedSpaces = Math.max(0, targetWords.length - 1);
+          const mainSt = smp.strokes
+            .filter(s => !(s.box.height < 11 && s.box.width < 28))
+            .sort((a, b) => a.box.minX - b.box.minX);
+
+          if (mainSt.length >= 2 && expectedSpaces > 0) {
+            const gaps = [];
+            let runMaxX = mainSt[0].box.maxX;
+            for (let i = 1; i < mainSt.length; i++) {
+              const g = mainSt[i].box.minX - runMaxX;
+              if (g > 1.5) gaps.push(g);
+              if (mainSt[i].box.maxX > runMaxX) runMaxX = mainSt[i].box.maxX;
+            }
+            gaps.sort((a, b) => b - a);
+            if (gaps.length >= expectedSpaces) {
+              wordGaps.push(...gaps.slice(0, expectedSpaces));
+              letterGaps.push(...gaps.slice(expectedSpaces));
+            }
+          }
+
+          if (smp.rawRecognized) {
+            const rawWords = smp.rawRecognized.trim().split(/\s+/).filter(Boolean);
+            if (rawWords.length === targetWords.length) {
+              for (let i = 0; i < targetWords.length; i++) {
+                const r = rawWords[i].toLowerCase();
+                if (r !== targetWords[i].toLowerCase()) {
+                  corrections[r] = targetWords[i];
+                }
+              }
+            }
+          }
+        }
+
+        let newGapThreshold = 13.0;
+        if (wordGaps.length > 0) {
+          wordGaps.sort((a, b) => a - b);
+          const minWordGap = wordGaps[0];
+          const maxLetterGap = letterGaps.length > 0 ? letterGaps.sort((a, b) => a - b)[letterGaps.length - 1] : minWordGap * 0.45;
+          newGapThreshold = Math.max(8, Math.min(26, (minWordGap + maxLetterGap) / 2));
+        }
+
+        let newHeight = 18.0;
+        if (heights.length > 0) {
+          heights.sort((a, b) => a - b);
+          newHeight = Math.max(10, Math.min(42, heights[Math.round((heights.length - 1) * 0.75)]));
+        }
+
+        let newSlant = 0.0;
+        if (slants.length > 0) {
+          slants.sort((a, b) => a - b);
+          newSlant = slants[Math.floor(slants.length / 2)];
+        }
+
+        calibrationProfile = {
+          wordGapThreshold: newGapThreshold,
+          baselineHandwritingHeight: newHeight,
+          slantShear: newSlant,
+          personalCorrections: corrections,
+          isCalibrated: true
+        };
+        saveCalibrationProfile();
+        calModal.classList.remove('open');
+      }
+    });
   </script>
 </body>
 </html>

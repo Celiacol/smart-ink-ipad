@@ -18,6 +18,9 @@ enum ToolType {
 
   /// Strumento di selezione per spostare elementi o modificare i blocchi di testo.
   selection,
+
+  /// Lazo che cerchia il testo convertito e compatta tutti gli spazi a spazi singoli.
+  lassoReflow,
 }
 
 /// Evento del puntatore normalizzato nello spazio di coordinate logiche A4 (595.28 x 841.89 pt).

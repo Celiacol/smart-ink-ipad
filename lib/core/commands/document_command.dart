@@ -244,3 +244,100 @@ class ChangePageBackgroundCommand extends DocumentCommand {
     });
   }
 }
+
+// =============================================================================
+// 7. RIFORMATTARE TESTO CERCHIATO CON SPAZI SINGOLI ("⭕ Cerchia Testo")
+// =============================================================================
+
+class ReflowTextSpacingCommand extends DocumentCommand {
+  final int pageIndex;
+  final List<TextElement> originalTexts;
+  final List<TextElement> reformattedTexts;
+
+  ReflowTextSpacingCommand({
+    required this.pageIndex,
+    required this.originalTexts,
+    required this.reformattedTexts,
+  });
+
+  @override
+  String get description =>
+      'Compatta spazi testo (${originalTexts.length} blocchi)';
+
+  @override
+  DocumentState execute(DocumentState currentState) {
+    final oldIds = originalTexts.map((e) => e.id).toSet();
+    return currentState.updatePage(pageIndex, (page) {
+      final remaining =
+          page.elements.where((e) => !oldIds.contains(e.id)).toList();
+      return page.copyWith(elements: [...remaining, ...reformattedTexts]);
+    });
+  }
+
+  @override
+  DocumentState undo(DocumentState currentState) {
+    final newIds = reformattedTexts.map((e) => e.id).toSet();
+    return currentState.updatePage(pageIndex, (page) {
+      final remaining =
+          page.elements.where((e) => !newIds.contains(e.id)).toList();
+      return page.copyWith(elements: [...remaining, ...originalTexts]);
+    });
+  }
+}
+
+// =============================================================================
+// 8. ACCORPA NUOVA SCRITTURA SU TESTO ESISTENTE DELLA STESSA RIGA (+ A-CAPO)
+// =============================================================================
+
+class MergeInkIntoTextCommand extends DocumentCommand {
+  final int pageIndex;
+  final List<StrokeElement> originalStrokes;
+  final TextElement? previousTargetText;
+  final TextElement? updatedTargetText;
+  final List<TextElement> additionalWrappedTexts;
+
+  MergeInkIntoTextCommand({
+    required this.pageIndex,
+    required this.originalStrokes,
+    this.previousTargetText,
+    this.updatedTargetText,
+    this.additionalWrappedTexts = const [],
+  });
+
+  @override
+  String get description => 'Accorpa testo sulla stessa riga';
+
+  @override
+  DocumentState execute(DocumentState currentState) {
+    final strokeIds = originalStrokes.map((s) => s.id).toSet();
+    return currentState.updatePage(pageIndex, (page) {
+      final updatedElements = page.elements
+          .where((e) => !strokeIds.contains(e.id))
+          .map((e) => (previousTargetText != null &&
+                  updatedTargetText != null &&
+                  e.id == previousTargetText!.id)
+              ? updatedTargetText!
+              : e)
+          .toList();
+      updatedElements.addAll(additionalWrappedTexts);
+      return page.copyWith(elements: updatedElements);
+    });
+  }
+
+  @override
+  DocumentState undo(DocumentState currentState) {
+    final addedIds = additionalWrappedTexts.map((e) => e.id).toSet();
+    return currentState.updatePage(pageIndex, (page) {
+      final restored = page.elements
+          .where((e) => !addedIds.contains(e.id))
+          .map((e) => (previousTargetText != null &&
+                  updatedTargetText != null &&
+                  e.id == updatedTargetText!.id)
+              ? previousTargetText!
+              : e)
+          .toList();
+      restored.addAll(originalStrokes);
+      return page.copyWith(elements: restored);
+    });
+  }
+}

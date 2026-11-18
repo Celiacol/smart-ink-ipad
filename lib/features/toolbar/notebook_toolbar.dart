@@ -37,6 +37,7 @@ class NotebookToolbar extends StatelessWidget {
   final bool allowFingerDrawing;
   final ValueChanged<bool> onAllowFingerDrawingChanged;
 
+  final VoidCallback onCalibrateHandwriting;
   final VoidCallback onExportPdf;
 
   static const List<int> paletteColors = [
@@ -65,6 +66,7 @@ class NotebookToolbar extends StatelessWidget {
     required this.onBackgroundChanged,
     required this.allowFingerDrawing,
     required this.onAllowFingerDrawingChanged,
+    required this.onCalibrateHandwriting,
     required this.onExportPdf,
   });
 
@@ -115,6 +117,11 @@ class NotebookToolbar extends StatelessWidget {
               icon: Icons.open_with_rounded,
               label: 'Seleziona',
               type: ToolType.selection,
+            ),
+            _buildToolButton(
+              icon: Icons.gesture_rounded,
+              label: 'Cerchia Testo',
+              type: ToolType.lassoReflow,
             ),
 
             if (activeToolType == ToolType.shape) ...[
@@ -195,6 +202,23 @@ class NotebookToolbar extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     FilterChip(
+                      selected: ocrService.mergeSameLineEnabled,
+                      label: Text(
+                        ocrService.mergeSameLineEnabled
+                            ? 'Accorpa Riga: ON'
+                            : 'Accorpa Riga: OFF',
+                      ),
+                      avatar: Icon(
+                        Icons.wrap_text_rounded,
+                        size: 18,
+                        color: ocrService.mergeSameLineEnabled
+                            ? const Color(0xFF1D4ED8)
+                            : const Color(0xFF64748B),
+                      ),
+                      onSelected: ocrService.setMergeSameLineEnabled,
+                    ),
+                    const SizedBox(width: 8),
+                    FilterChip(
                       selected: !allowFingerDrawing,
                       label: Text(
                         !allowFingerDrawing
@@ -213,15 +237,43 @@ class NotebookToolbar extends StatelessWidget {
                       onSelected: (penOnly) =>
                           onAllowFingerDrawingChanged(!penOnly),
                     ),
+                    const SizedBox(width: 8),
+                    ActionChip(
+                      avatar: Icon(
+                        ocrService.calibrationProfile.isCalibrated
+                            ? Icons.verified_rounded
+                            : Icons.tune_rounded,
+                        size: 17,
+                        color: ocrService.calibrationProfile.isCalibrated
+                            ? const Color(0xFF16A34A)
+                            : const Color(0xFF2563EB),
+                      ),
+                      label: Text(
+                        ocrService.calibrationProfile.isCalibrated
+                            ? 'Calibrata ✓'
+                            : 'Calibra Scrittura',
+                      ),
+                      onPressed: onCalibrateHandwriting,
+                    ),
                     const SizedBox(width: 10),
 
                     // Scelta tra Punto 1 (Auto-Snap a Stili) e Punto 2 (Fissa da Toolbar)
                     SegmentedButton<TextSizeMode>(
                       segments: const [
-                        ButtonSegment<TextSizeMode>(
+                        const ButtonSegment<TextSizeMode>(
                           value: TextSizeMode.adaptiveSnap,
-                          label: Text('Dim. Auto-Snap'),
-                          icon: Icon(Icons.auto_fix_high_rounded, size: 16),
+                          label: Text(
+                            'Dim. Auto-Snap (BETA)',
+                            style: TextStyle(
+                              color: Color(0xFFDC2626),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          icon: Icon(
+                            Icons.auto_fix_high_rounded,
+                            size: 16,
+                            color: Color(0xFFDC2626),
+                          ),
                         ),
                         ButtonSegment<TextSizeMode>(
                           value: TextSizeMode.fixedFromToolbar,
