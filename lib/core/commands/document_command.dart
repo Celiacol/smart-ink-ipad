@@ -341,3 +341,47 @@ class MergeInkIntoTextCommand extends DocumentCommand {
     });
   }
 }
+
+// =============================================================================
+// 9. SPOSTAMENTO IN BLOCCO DI ELEMENTI (Sposta Spazio o Lazo Sposta)
+// =============================================================================
+
+class TranslateElementsCommand extends DocumentCommand {
+  final int pageIndex;
+  final Set<String> elementIds;
+  final double dx;
+  final double dy;
+
+  TranslateElementsCommand({
+    required this.pageIndex,
+    required this.elementIds,
+    required this.dx,
+    required this.dy,
+  });
+
+  @override
+  String get description =>
+      'Sposta ${elementIds.length} elementi di (${dx.round()}, ${dy.round()})';
+
+  @override
+  DocumentState execute(DocumentState currentState) {
+    return currentState.updatePage(pageIndex, (page) {
+      return page.copyWith(
+        elements: page.elements
+            .map((e) => elementIds.contains(e.id) ? e.translate(dx, dy) : e)
+            .toList(),
+      );
+    });
+  }
+
+  @override
+  DocumentState undo(DocumentState currentState) {
+    return currentState.updatePage(pageIndex, (page) {
+      return page.copyWith(
+        elements: page.elements
+            .map((e) => elementIds.contains(e.id) ? e.translate(-dx, -dy) : e)
+            .toList(),
+      );
+    });
+  }
+}

@@ -24,6 +24,12 @@ enum ToolType {
 
   /// Lazo che cerchia il testo convertito e compatta tutti gli spazi a spazi singoli.
   lassoReflow,
+
+  /// Inserisce o rimuove spazio verticale trascinando tutto ciò che si trova sotto o sopra un punto Y.
+  verticalSpace,
+
+  /// Cerchia testo, tratti o forme qualsiasi e li sposta liberamente sul foglio.
+  lassoMove,
 }
 
 /// Evento del puntatore normalizzato nello spazio di coordinate logiche A4 (595.28 x 841.89 pt).

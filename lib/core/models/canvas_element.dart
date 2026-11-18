@@ -181,6 +181,22 @@ class StrokeElement extends CanvasElement {
 // 2. BLOCCO DI TESTO DIGITALE (Convertito dalla scrittura a mano o digitato)
 // =============================================================================
 
+/// Singolo segmento colorato all'interno di un [TextElement] multi-colore.
+class TextColorSpan {
+  final String text;
+  final int colorValue;
+
+  const TextColorSpan({
+    required this.text,
+    required this.colorValue,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'colorValue': colorValue,
+      };
+}
+
 class TextElement extends CanvasElement {
   /// Coordinata X dell'angolo superiore sinistro sul foglio A4.
   final double x;
@@ -203,6 +219,9 @@ class TextElement extends CanvasElement {
   /// ID dei tratti originali da cui è stato generato questo testo (utile per debug/storia).
   final List<String> sourceStrokeIds;
 
+  /// Segmenti multi-colore opzionali (se vuoto, usa `colorValue` unico per tutto `text`).
+  final List<TextColorSpan> spans;
+
   const TextElement({
     required super.id,
     required super.pageIndex,
@@ -214,6 +233,7 @@ class TextElement extends CanvasElement {
     this.maxWidth = 520.0,
     this.fontFamily = 'Roboto',
     this.sourceStrokeIds = const [],
+    this.spans = const [],
   });
 
   @override
@@ -238,6 +258,7 @@ class TextElement extends CanvasElement {
     double? fontSize,
     int? colorValue,
     double? maxWidth,
+    List<TextColorSpan>? spans,
   }) {
     return TextElement(
       id: id,
@@ -250,6 +271,7 @@ class TextElement extends CanvasElement {
       maxWidth: maxWidth ?? this.maxWidth,
       fontFamily: fontFamily,
       sourceStrokeIds: sourceStrokeIds,
+      spans: spans ?? this.spans,
     );
   }
 
@@ -271,6 +293,7 @@ class TextElement extends CanvasElement {
         'maxWidth': maxWidth,
         'fontFamily': fontFamily,
         'sourceStrokeIds': sourceStrokeIds,
+        'spans': spans.map((s) => s.toJson()).toList(),
       };
 }
 

@@ -13,10 +13,12 @@ import 'features/toolbar/notebook_toolbar.dart';
 import 'features/tools/canvas_tool_handler.dart';
 import 'features/tools/eraser_tool_handler.dart';
 import 'features/tools/lasso_convert_tool_handler.dart';
+import 'features/tools/lasso_move_tool_handler.dart';
 import 'features/tools/lasso_reflow_tool_handler.dart';
 import 'features/tools/pen_tool_handler.dart';
 import 'features/tools/selection_tool_handler.dart';
 import 'features/tools/shape_tool_handler.dart';
+import 'features/tools/vertical_space_tool_handler.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,6 +69,8 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
   late final SelectionToolHandler _selectionTool;
   late final LassoConvertToolHandler _lassoConvertTool;
   late final LassoReflowToolHandler _lassoReflowTool;
+  late final VerticalSpaceToolHandler _verticalSpaceTool;
+  late final LassoMoveToolHandler _lassoMoveTool;
 
   ToolType _activeToolType = ToolType.pen;
   int _selectedColorValue = 0xFF1E293B;
@@ -74,6 +78,7 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
   // Di default su iPad usiamo "Solo Apple Pencil" (false) così il palmo non scrive
   // e 1 dito scorre / 2 dita fanno Pinch-to-Zoom!
   bool _allowFingerDrawing = false;
+  bool _verticalSpaceMovesBelow = true;
 
   @override
   void initState() {
@@ -101,6 +106,8 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
     );
     _lassoConvertTool = LassoConvertToolHandler(ocrService: _ocrService);
     _lassoReflowTool = LassoReflowToolHandler();
+    _verticalSpaceTool = VerticalSpaceToolHandler();
+    _lassoMoveTool = LassoMoveToolHandler();
   }
 
   @override
@@ -126,6 +133,10 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
         return _lassoConvertTool;
       case ToolType.lassoReflow:
         return _lassoReflowTool;
+      case ToolType.verticalSpace:
+        return _verticalSpaceTool;
+      case ToolType.lassoMove:
+        return _lassoMoveTool;
     }
   }
 
@@ -280,6 +291,13 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
                   allowFingerDrawing: _allowFingerDrawing,
                   onAllowFingerDrawingChanged: (val) {
                     setState(() => _allowFingerDrawing = val);
+                  },
+                  verticalSpaceMovesBelow: _verticalSpaceMovesBelow,
+                  onVerticalSpaceDirectionChanged: (movesBelow) {
+                    setState(() {
+                      _verticalSpaceMovesBelow = movesBelow;
+                      _verticalSpaceTool.moveBelowPoint = movesBelow;
+                    });
                   },
                   onCalibrateHandwriting: _showCalibrationDialog,
                   onExportPdf: () => _pdfExportService.printOrShareDocument(

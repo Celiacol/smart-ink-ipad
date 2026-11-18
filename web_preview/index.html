@@ -314,6 +314,8 @@
     <button class="chip" data-tool="highlighter">🖍️ Evidenz.</button>
     <button class="chip" data-tool="eraser">🧹 Gomma</button>
     <button class="chip" data-tool="shape">📐 Forme</button>
+    <button class="chip" data-tool="lassoMove" title="Cerchia testo, tratti o forme e trascinali dove vuoi">🔲 Lazo Sposta</button>
+    <button class="chip" data-tool="verticalSpace" title="Scegli un punto verticale e trascina tutto ciò che c'è sotto o sopra">↕️ Sposta Spazio</button>
     <button class="chip" data-tool="lassoConvert" title="Cerchia la scrittura a mano libera da convertire in testo digitale">✨ Converti Cerchio</button>
     <button class="chip" data-tool="lassoReflow" title="Cerchia il testo già convertito per compattare gli spazi">⭕ Compatta Testo</button>
 
@@ -322,6 +324,11 @@
       <option value="circle">Cerchio</option>
       <option value="line">Linea</option>
       <option value="arrow">Freccia</option>
+    </select>
+
+    <select id="verticalSpaceDirSelect" style="display:none;">
+      <option value="below">Sposta: Sotto ↓</option>
+      <option value="above">Sposta: Sopra ↑</option>
     </select>
 
     <div class="divider"></div>
@@ -682,19 +689,42 @@
           drawShapeOnCtx(ctx, el.kind, el.start, el.end, el.color);
         } else if (el.type === 'text') {
           ctx.save();
-          ctx.fillStyle = el.color;
           ctx.font = `500 ${el.fontSize}px Inter, Roboto, sans-serif`;
           // 'alphabetic' posiziona la base reale delle lettere (a,c,e,m,o) esattamente sopra la riga,
           // mentre le code discendenti (p,g,q,y) scendono naturalmente sotto la riga!
           ctx.textBaseline = 'alphabetic';
           const baseLineY = el.baselineY !== undefined ? el.baselineY : (el.y + el.fontSize * 0.82);
-          const lines = el.text.split('\n');
-          lines.forEach((line, i) => {
-            ctx.fillText(line, el.x, baseLineY + i * (el.fontSize * 1.35));
-          });
+
+          if (el.spans && el.spans.length > 0) {
+            let curX = el.x;
+            for (const sp of el.spans) {
+              ctx.fillStyle = sp.color || el.color;
+              ctx.fillText(sp.text, curX, baseLineY);
+              curX += ctx.measureText(sp.text).width;
+            }
+          } else {
+            ctx.fillStyle = el.color;
+            const lines = el.text.split('\n');
+            lines.forEach((line, i) => {
+              ctx.fillText(line, el.x, baseLineY + i * (el.fontSize * 1.35));
+            });
+          }
           ctx.restore();
         }
       });
+
+      // Mostra eventuale rettangolo di selezione di Lazo Sposta
+      if (lassoMoveSelection && lassoMoveSelection.pageIndex === page.index && lassoMoveSelection.bounds) {
+        const b = lassoMoveSelection.bounds;
+        ctx.save();
+        ctx.strokeStyle = '#16a34a';
+        ctx.fillStyle = 'rgba(22, 163, 74, 0.08)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.fillRect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
+        ctx.strokeRect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
+        ctx.restore();
+      }
 
       if (previewFn) previewFn(ctx);
     }
@@ -764,6 +794,62 @@
     let isMultiTouchGesturing = false;
     let activeDrawingCanceller = null;
 
+    // Stato strumenti Lazo Sposta & Sposta Spazio
+    let lassoMoveSelection = null; // { pageIndex, elementIds: Set, bounds: {minX,minY,maxX,maxY} }
+
+    function getElementBounds(ctx, el) {
+      if (el.type === 'stroke') return el.box;
+      if (el.type === 'shape') {
+        return {
+          minX: Math.min(el.start.x, el.end.x),
+          minY: Math.min(el.start.y, el.end.y),
+          maxX: Math.max(el.start.x, el.end.x),
+          maxY: Math.max(el.start.y, el.end.y)
+        };
+      }
+      if (el.type === 'text') {
+        ctx.save();
+        ctx.font = `500 ${el.fontSize}px Inter, Roboto, sans-serif`;
+        const w = Math.max(20, ctx.measureText(el.text.split('\n')[0]).width);
+        ctx.restore();
+        const linesCount = el.text.split('\n').length;
+        return {
+          minX: el.x,
+          minY: el.y,
+          maxX: el.x + w,
+          maxY: el.y + linesCount * (el.fontSize * 1.35)
+        };
+      }
+      return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    }
+
+    function translateElementBy(el, dx, dy) {
+      if (el.type === 'stroke') {
+        el.points.forEach(p => { p.x += dx; p.y += dy; });
+        el.box = getBoundingBox(el.points);
+      } else if (el.type === 'shape') {
+        el.start.x += dx; el.start.y += dy;
+        el.end.x += dx; el.end.y += dy;
+      } else if (el.type === 'text') {
+        el.x += dx;
+        el.y += dy;
+        if (el.baselineY !== undefined) el.baselineY += dy;
+      }
+    }
+
+    function computeGroupBounds(ctx, elements) {
+      if (!elements.length) return null;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const el of elements) {
+        const b = getElementBounds(ctx, el);
+        if (b.minX < minX) minX = b.minX;
+        if (b.minY < minY) minY = b.minY;
+        if (b.maxX > maxX) maxX = b.maxX;
+        if (b.maxY > maxY) maxY = b.maxY;
+      }
+      return { minX: minX - 6, minY: minY - 6, maxX: maxX + 6, maxY: maxY + 6 };
+    }
+
     function attachCanvasEvents(canvas, page) {
       const ctx = canvas.getContext('2d');
       let isDown = false;
@@ -771,12 +857,18 @@
       let currentPoints = [];
       let strokeStartTime = 0;
 
+      // Stato drag locale per Sposta Spazio / Lazo Sposta
+      let verticalSpaceState = null; // { splitY, affectedIds, totalDy, moveBelow }
+      let lassoDraggingState = null; // { lastPt, totalDx, totalDy }
+
       function cancelCurrentStroke() {
         if (!isDown) return;
         const pid = activeDrawPointerId;
         isDown = false;
         activeDrawPointerId = null;
         currentPoints = [];
+        verticalSpaceState = null;
+        lassoDraggingState = null;
         if (pid !== null) {
           try { canvas.releasePointerCapture(pid); } catch (_) {}
         }
@@ -808,6 +900,34 @@
 
         const pt = getScaledCanvasPoint(canvas, e, 0);
         currentPoints = [pt];
+
+        if (activeTool === 'verticalSpace') {
+          const moveBelow = document.getElementById('verticalSpaceDirSelect').value !== 'above';
+          const affectedIds = new Set();
+          for (const el of page.elements) {
+            const b = getElementBounds(ctx, el);
+            const centerY = (b.minY + b.maxY) / 2;
+            if (moveBelow ? centerY >= pt.y : centerY <= pt.y) {
+              affectedIds.add(el.id);
+            }
+          }
+          verticalSpaceState = { splitY: pt.y, affectedIds, totalDy: 0, moveBelow };
+        } else if (activeTool === 'lassoMove') {
+          if (
+            lassoMoveSelection &&
+            lassoMoveSelection.pageIndex === page.index &&
+            lassoMoveSelection.bounds &&
+            pt.x >= lassoMoveSelection.bounds.minX - 10 &&
+            pt.x <= lassoMoveSelection.bounds.maxX + 10 &&
+            pt.y >= lassoMoveSelection.bounds.minY - 10 &&
+            pt.y <= lassoMoveSelection.bounds.maxY + 10
+          ) {
+            lassoDraggingState = { lastPt: pt, totalDx: 0, totalDy: 0 };
+          } else {
+            lassoMoveSelection = null;
+            lassoDraggingState = null;
+          }
+        }
       });
 
       canvas.addEventListener('pointermove', e => {
@@ -817,7 +937,48 @@
         const pt = getScaledCanvasPoint(canvas, e, Date.now() - strokeStartTime);
         currentPoints.push(pt);
 
-        if (activeTool === 'eraser') {
+        if (activeTool === 'verticalSpace' && verticalSpaceState) {
+          const dy = pt.y - (verticalSpaceState.splitY + verticalSpaceState.totalDy);
+          verticalSpaceState.totalDy += dy;
+          for (const el of page.elements) {
+            if (verticalSpaceState.affectedIds.has(el.id)) {
+              translateElementBy(el, 0, dy);
+            }
+          }
+          const lineY = Math.max(0, Math.min(A4_HEIGHT, pt.y));
+          drawPageCanvas(ctx, page, c => {
+            c.save();
+            c.fillStyle = 'rgba(14, 165, 233, 0.1)';
+            if (verticalSpaceState.moveBelow) {
+              c.fillRect(0, lineY, A4_WIDTH, A4_HEIGHT - lineY);
+            } else {
+              c.fillRect(0, 0, A4_WIDTH, lineY);
+            }
+            c.strokeStyle = '#0284c7';
+            c.lineWidth = 2;
+            c.beginPath();
+            c.moveTo(0, lineY);
+            c.lineTo(A4_WIDTH, lineY);
+            c.stroke();
+            c.restore();
+          });
+        } else if (activeTool === 'lassoMove' && lassoDraggingState && lassoMoveSelection) {
+          const dx = pt.x - lassoDraggingState.lastPt.x;
+          const dy = pt.y - lassoDraggingState.lastPt.y;
+          lassoDraggingState.lastPt = pt;
+          lassoDraggingState.totalDx += dx;
+          lassoDraggingState.totalDy += dy;
+          for (const el of page.elements) {
+            if (lassoMoveSelection.elementIds.has(el.id)) {
+              translateElementBy(el, dx, dy);
+            }
+          }
+          lassoMoveSelection.bounds.minX += dx;
+          lassoMoveSelection.bounds.maxX += dx;
+          lassoMoveSelection.bounds.minY += dy;
+          lassoMoveSelection.bounds.maxY += dy;
+          drawPageCanvas(ctx, page);
+        } else if (activeTool === 'eraser') {
           page.elements = page.elements.filter(el => {
             if (el.type === 'stroke') {
               return !el.points.some(p => Math.hypot(p.x - pt.x, p.y - pt.y) < 15);
@@ -831,12 +992,17 @@
         } else if (activeTool === 'shape') {
           const kind = document.getElementById('shapeKindSelect').value;
           drawPageCanvas(ctx, page, c => drawShapeOnCtx(c, kind, currentPoints[0], pt, activeColor));
-        } else if (activeTool === 'lassoConvert' || activeTool === 'lassoReflow') {
-          const isConvert = activeTool === 'lassoConvert';
+        } else if (activeTool === 'lassoConvert' || activeTool === 'lassoReflow' || activeTool === 'lassoMove') {
+          const strokeCol = activeTool === 'lassoConvert'
+            ? '#7c3aed'
+            : (activeTool === 'lassoMove' ? '#16a34a' : '#2563eb');
+          const fillCol = activeTool === 'lassoConvert'
+            ? 'rgba(124, 58, 237, 0.08)'
+            : (activeTool === 'lassoMove' ? 'rgba(22, 163, 74, 0.08)' : 'rgba(37, 99, 235, 0.08)');
           drawPageCanvas(ctx, page, c => {
             c.save();
-            c.strokeStyle = isConvert ? '#7c3aed' : '#2563eb';
-            c.fillStyle = isConvert ? 'rgba(124, 58, 237, 0.08)' : 'rgba(37, 99, 235, 0.08)';
+            c.strokeStyle = strokeCol;
+            c.fillStyle = fillCol;
             c.lineWidth = 2;
             c.setLineDash([6, 4]);
             c.beginPath();
@@ -872,6 +1038,37 @@
         if (activeDrawingCanceller === cancelCurrentStroke) {
           activeDrawingCanceller = null;
         }
+
+        if (activeTool === 'verticalSpace' && verticalSpaceState) {
+          if (Math.abs(verticalSpaceState.totalDy) > 2 && verticalSpaceState.affectedIds.size > 0) {
+            undoStack.push({
+              type: 'translate',
+              pageIndex: page.index,
+              elementIds: new Set(verticalSpaceState.affectedIds),
+              dx: 0,
+              dy: verticalSpaceState.totalDy
+            });
+          }
+          verticalSpaceState = null;
+          drawPageCanvas(ctx, page);
+          return;
+        }
+
+        if (activeTool === 'lassoMove' && lassoDraggingState && lassoMoveSelection) {
+          if (Math.hypot(lassoDraggingState.totalDx, lassoDraggingState.totalDy) > 2) {
+            undoStack.push({
+              type: 'translate',
+              pageIndex: page.index,
+              elementIds: new Set(lassoMoveSelection.elementIds),
+              dx: lassoDraggingState.totalDx,
+              dy: lassoDraggingState.totalDy
+            });
+          }
+          lassoDraggingState = null;
+          drawPageCanvas(ctx, page);
+          return;
+        }
+
         if (currentPoints.length < 2) {
           drawPageCanvas(ctx, page);
           return;
@@ -904,6 +1101,28 @@
           };
           page.elements.push(shapeEl);
           undoStack.push({ type: 'add', pageIndex: page.index, elementId: shapeEl.id });
+          drawPageCanvas(ctx, page);
+        } else if (activeTool === 'lassoMove') {
+          const selected = [];
+          for (const el of page.elements) {
+            const b = getElementBounds(ctx, el);
+            const midY = (b.minY + b.maxY) / 2;
+            const w = b.maxX - b.minX;
+            const hit =
+              isPointInPolygon(b.minX + w * 0.5, midY, currentPoints) ||
+              isPointInPolygon(b.minX + w * 0.2, midY, currentPoints) ||
+              isPointInPolygon(b.minX + w * 0.8, midY, currentPoints);
+            if (hit) selected.push(el);
+          }
+          if (selected.length > 0) {
+            lassoMoveSelection = {
+              pageIndex: page.index,
+              elementIds: new Set(selected.map(e => e.id)),
+              bounds: computeGroupBounds(ctx, selected)
+            };
+          } else {
+            lassoMoveSelection = null;
+          }
           drawPageCanvas(ctx, page);
         } else if (activeTool === 'lassoConvert') {
           convertCircledHandwriting(ctx, page, currentPoints);
@@ -1571,65 +1790,115 @@
         const lineStep = bgTemplate === 'ruled' ? 24 : (resolvedFontSize * 1.35);
 
         for (const group of positionedGroups) {
-          const recognizedParts = [];
-          let runningContext = matchedSameLineRightElement ? matchedSameLineRightElement.text : '';
-          for (const chunk of group.ocrChunks) {
-            const part = await recognizeStrokesReal(chunk, runningContext);
-            if (part) {
-              recognizedParts.push(part);
-              runningContext = `${runningContext} ${part}`.trim();
+          // Divide i tratti per colore contiguo (es. nero + rosso sulla stessa riga) così ogni colore resta intatto!
+          const sortedByX = [...group.allStrokes].sort((a, b) => a.box.minX - b.box.minX);
+          const colorRuns = [];
+          for (const st of sortedByX) {
+            const lastRun = colorRuns[colorRuns.length - 1];
+            if (lastRun && lastRun.color === st.color) {
+              lastRun.strokes.push(st);
+            } else {
+              colorRuns.push({ color: st.color, strokes: [st] });
             }
           }
 
-          const groupText = recognizedParts.join(' ').replace(/[ \t]+/g, ' ').trim();
-          if (!groupText) continue;
+          let runningContext = matchedSameLineRightElement ? matchedSameLineRightElement.text : '';
+          const newColoredWords = [];
+          for (const run of colorRuns) {
+            // Spezza eventualmente ogni run lungo in max 3 parole
+            const runChunks = buildPositionedGroupsForLine(run.strokes, true)[0]?.ocrChunks || [run.strokes];
+            for (const ch of runChunks) {
+              const part = await recognizeStrokesReal(ch, runningContext);
+              if (part) {
+                runningContext = `${runningContext} ${part}`.trim();
+                for (const w of part.replace(/[ \t]+/g, ' ').trim().split(/\s+/)) {
+                  if (w) newColoredWords.push({ text: w, color: run.color });
+                }
+              }
+            }
+          }
+
+          if (newColoredWords.length === 0) continue;
 
           const groupStrokeIds = new Set(group.allStrokes.map(s => s.id));
           page.elements = page.elements.filter(el => !groupStrokeIds.has(el.id));
 
+          function wordsToSpans(wordsArr) {
+            if (!wordsArr.length) return [];
+            const spans = [];
+            let curColor = wordsArr[0].color;
+            let buf = wordsArr[0].text;
+            for (let i = 1; i < wordsArr.length; i++) {
+              if (wordsArr[i].color === curColor) {
+                buf += ' ' + wordsArr[i].text;
+              } else {
+                spans.push({ text: buf + ' ', color: curColor });
+                curColor = wordsArr[i].color;
+                buf = wordsArr[i].text;
+              }
+            }
+            spans.push({ text: buf, color: curColor });
+            return spans;
+          }
+
+          function extractElementColoredWords(el) {
+            if (el.spans && el.spans.length > 0) {
+              const out = [];
+              for (const sp of el.spans) {
+                for (const w of sp.text.trim().split(/\s+/)) {
+                  if (w) out.push({ text: w, color: sp.color || el.color });
+                }
+              }
+              return out;
+            }
+            return el.text.trim().split(/\s+/).filter(Boolean).map(w => ({ text: w, color: el.color }));
+          }
+
           if (mergeOnSameLineEnabled) {
-            // Unisce al testo già presente sulla stessa riga (o alla riga precedente se scrittura continua)
             const anchorEl = matchedSameLineRightElement;
             const startX = anchorEl ? anchorEl.x : group.minX;
             const maxLineWidth = Math.max(120, (A4_WIDTH - 28) - startX);
-            const combinedWords = (anchorEl ? `${anchorEl.text} ${groupText}` : groupText)
-              .trim()
-              .split(/\s+/)
-              .filter(Boolean);
+            const combinedColoredWords = anchorEl
+              ? [...extractElementColoredWords(anchorEl), ...newColoredWords]
+              : newColoredWords;
 
             ctx.save();
             ctx.font = `500 ${resolvedFontSize}px Inter, Roboto, sans-serif`;
-            const wrappedLines = [];
-            let curLine = '';
-            for (const w of combinedWords) {
-              const cand = curLine ? `${curLine} ${w}` : w;
-              if (curLine && ctx.measureText(cand).width > maxLineWidth) {
-                wrappedLines.push(curLine);
-                curLine = w;
+            const wrappedColoredLines = [];
+            let curWords = [];
+            for (const w of combinedColoredWords) {
+              const candStr = curWords.length ? `${curWords.map(x => x.text).join(' ')} ${w.text}` : w.text;
+              if (curWords.length && ctx.measureText(candStr).width > maxLineWidth) {
+                wrappedColoredLines.push(curWords);
+                curWords = [w];
               } else {
-                curLine = cand;
+                curWords.push(w);
               }
             }
-            if (curLine) wrappedLines.push(curLine);
+            if (curWords.length) wrappedColoredLines.push(curWords);
             ctx.restore();
 
             if (anchorEl) {
               const previousText = anchorEl.text;
-              anchorEl.text = wrappedLines[0];
+              const previousSpans = anchorEl.spans ? [...anchorEl.spans] : null;
+              anchorEl.text = wrappedColoredLines[0].map(w => w.text).join(' ');
+              anchorEl.spans = wordsToSpans(wrappedColoredLines[0]);
               const createdOverflowIds = [];
               let tailEl = anchorEl;
 
-              for (let wi = 1; wi < wrappedLines.length; wi++) {
+              for (let wi = 1; wi < wrappedColoredLines.length; wi++) {
                 const nextBaseY = targetBaselineY + wi * lineStep;
+                const lineSpans = wordsToSpans(wrappedColoredLines[wi]);
                 const overflowEl = {
                   id: 'txt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + '_' + wi,
                   type: 'text',
                   x: startX,
                   y: nextBaseY - finalAscent,
                   baselineY: nextBaseY,
-                  color: anchorEl.color,
+                  color: lineSpans[0].color,
+                  spans: lineSpans,
                   fontSize: resolvedFontSize,
-                  text: wrappedLines[wi]
+                  text: wrappedColoredLines[wi].map(w => w.text).join(' ')
                 };
                 page.elements.push(overflowEl);
                 createdOverflowIds.push(overflowEl.id);
@@ -1645,23 +1914,26 @@
                 pageIndex: page.index,
                 targetElementId: anchorEl.id,
                 previousText,
+                previousSpans,
                 addedTextIds: createdOverflowIds,
                 removedStrokes: group.allStrokes
               });
             } else {
               const createdIds = [];
               let tailEl = null;
-              for (let wi = 0; wi < wrappedLines.length; wi++) {
+              for (let wi = 0; wi < wrappedColoredLines.length; wi++) {
                 const lineBaseY = targetBaselineY + wi * lineStep;
+                const lineSpans = wordsToSpans(wrappedColoredLines[wi]);
                 const newEl = {
                   id: 'txt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + '_' + wi,
                   type: 'text',
                   x: startX,
                   y: lineBaseY - finalAscent,
                   baselineY: lineBaseY,
-                  color: group.allStrokes[0].color,
+                  color: lineSpans[0].color,
+                  spans: lineSpans,
                   fontSize: resolvedFontSize,
-                  text: wrappedLines[wi]
+                  text: wrappedColoredLines[wi].map(w => w.text).join(' ')
                 };
                 page.elements.push(newEl);
                 createdIds.push(newEl.id);
@@ -1682,16 +1954,17 @@
               });
             }
           } else {
-            // Modalità libera: mantiene ogni blocco separato esattamente alla X in cui è stato scritto
+            const lineSpans = wordsToSpans(newColoredWords);
             const textEl = {
               id: 'txt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
               type: 'text',
               x: group.minX,
               y: targetBaselineY - finalAscent,
               baselineY: targetBaselineY,
-              color: group.allStrokes[0].color,
+              color: lineSpans[0].color,
+              spans: lineSpans,
               fontSize: resolvedFontSize,
-              text: groupText
+              text: newColoredWords.map(w => w.text).join(' ')
             };
             page.elements.push(textEl);
 
@@ -1803,7 +2076,10 @@
         document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         activeTool = btn.dataset.tool;
+        if (activeTool !== 'lassoMove') lassoMoveSelection = null;
         document.getElementById('shapeKindSelect').style.display = activeTool === 'shape' ? 'inline-flex' : 'none';
+        document.getElementById('verticalSpaceDirSelect').style.display = activeTool === 'verticalSpace' ? 'inline-flex' : 'none';
+        renderAllPages();
       });
     });
 
@@ -2048,10 +2324,21 @@
       } else if (last.type === 'mergeConvert') {
         const p = pages[last.pageIndex];
         const target = p.elements.find(el => el.id === last.targetElementId);
-        if (target) target.text = last.previousText;
+        if (target) {
+          target.text = last.previousText;
+          if (last.previousSpans !== undefined) target.spans = last.previousSpans;
+        }
         const addedSet = new Set(last.addedTextIds);
         p.elements = p.elements.filter(el => !addedSet.has(el.id));
         p.elements.push(...last.removedStrokes);
+      } else if (last.type === 'translate') {
+        const p = pages[last.pageIndex];
+        for (const el of p.elements) {
+          if (last.elementIds.has(el.id)) {
+            translateElementBy(el, -last.dx, -last.dy);
+          }
+        }
+        lassoMoveSelection = null;
       } else if (last.type === 'reflow') {
         const p = pages[last.pageIndex];
         const newIdSet = new Set(last.newIds);

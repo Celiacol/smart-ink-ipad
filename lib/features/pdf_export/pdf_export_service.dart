@@ -73,14 +73,35 @@ class PdfExportService {
                         constraints: pw.BoxConstraints(
                           maxWidth: element.maxWidth,
                         ),
-                        child: pw.Text(
-                          element.text,
-                          style: pw.TextStyle(
-                            fontSize: element.fontSize,
-                            color: _solidPdfColor(element.colorValue),
-                            lineSpacing: element.fontSize * 0.25,
-                          ),
-                        ),
+                        child: element.spans.isNotEmpty
+                            ? pw.RichText(
+                                text: pw.TextSpan(
+                                  style: pw.TextStyle(
+                                    fontSize: element.fontSize,
+                                    color: _solidPdfColor(element.colorValue),
+                                    lineSpacing: element.fontSize * 0.25,
+                                  ),
+                                  children: element.spans
+                                      .map(
+                                        (sp) => pw.TextSpan(
+                                          text: sp.text,
+                                          style: pw.TextStyle(
+                                            fontSize: element.fontSize,
+                                            color: _solidPdfColor(sp.colorValue),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                ),
+                              )
+                            : pw.Text(
+                                element.text,
+                                style: pw.TextStyle(
+                                  fontSize: element.fontSize,
+                                  color: _solidPdfColor(element.colorValue),
+                                  lineSpacing: element.fontSize * 0.25,
+                                ),
+                              ),
                       ),
                     ),
 

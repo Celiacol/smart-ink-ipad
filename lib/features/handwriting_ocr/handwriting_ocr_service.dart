@@ -360,21 +360,38 @@ class HandwritingOcrService extends ChangeNotifier {
 
         for (final groupCluster in positionedGroups) {
           final groupX = groupCluster.boundingBox.left;
-          final preContextText = continuousTail?.text ??
+          String runningContext = continuousTail?.text ??
               _findSameLineLeftText(
                 existingTexts: existingTexts,
                 lineY: lineLayout.anchorY,
                 newMinX: groupX,
                 fontSize: lineLayout.resolvedFontSize,
-              )?.text;
+              )?.text ??
+              '';
 
-          final groupText = (await _recognizeLineStrokes(
-            groupCluster,
-            preContext: preContextText,
-          ))
-              .replaceAll(RegExp(r'[ \t]+'), ' ')
-              .trim();
-          if (groupText.isEmpty) continue;
+          // Suddivide per cambi di colore (es. parola nera + parola rossa) così i colori
+          // originali restano sempre fedeli anche dopo l'accorpamento sulla stessa riga!
+          final colorRuns = _splitClusterByColorRuns(groupCluster);
+          final newColoredWords = <_ColoredWord>[];
+
+          for (final runCluster in colorRuns) {
+            final runColor = runCluster.strokes.first.colorValue;
+            final runText = (await _recognizeLineStrokes(
+              runCluster,
+              preContext: runningContext.isNotEmpty ? runningContext : null,
+            ))
+                .replaceAll(RegExp(r'[ \t]+'), ' ')
+                .trim();
+            if (runText.isEmpty) continue;
+            runningContext = '$runningContext $runText'.trim();
+            for (final w in runText.split(RegExp(r'\s+'))) {
+              if (w.isNotEmpty) {
+                newColoredWords.add(_ColoredWord(text: w, colorValue: runColor));
+              }
+            }
+          }
+
+          if (newColoredWords.isEmpty) continue;
 
           if (_mergeSameLineEnabled) {
             final anchorEl = continuousTail ??
@@ -392,34 +409,38 @@ class HandwritingOcrService extends ChangeNotifier {
                 ? 24.0
                 : lineLayout.resolvedFontSize * 1.32;
 
-            final combinedWords =
-                (anchorEl != null ? '${anchorEl.text} $groupText' : groupText)
-                    .trim()
-                    .split(RegExp(r'\s+'))
-                    .where((w) => w.isNotEmpty)
-                    .toList();
+            final combinedColoredWords = <_ColoredWord>[
+              if (anchorEl != null) ..._extractColoredWordsFromElement(anchorEl),
+              ...newColoredWords,
+            ];
 
-            final wrappedLines = _wrapWordsToWidth(
-              words: combinedWords,
+            final wrappedLines = _wrapColoredWordsToWidth(
+              words: combinedColoredWords,
               maxWidth: maxLineWidth,
               fontSize: lineLayout.resolvedFontSize,
             );
             if (wrappedLines.isEmpty) continue;
 
             if (anchorEl != null) {
-              final updatedTarget = anchorEl.copyWith(text: wrappedLines.first);
+              final firstSpans = _buildSpansFromColoredWords(wrappedLines.first);
+              final updatedTarget = anchorEl.copyWith(
+                text: wrappedLines.first.map((w) => w.text).join(' '),
+                spans: firstSpans,
+              );
               final extraLines = <TextElement>[];
               TextElement tail = updatedTarget;
               for (int wi = 1; wi < wrappedLines.length; wi++) {
+                final lineSpans = _buildSpansFromColoredWords(wrappedLines[wi]);
                 final overflowEl = TextElement(
                   id: _uuid.v4(),
                   pageIndex: pageIndex,
-                  colorValue: anchorEl.colorValue,
+                  colorValue: lineSpans.first.colorValue,
                   x: startX,
                   y: baseLineY + wi * lineStep,
-                  text: wrappedLines[wi],
+                  text: wrappedLines[wi].map((w) => w.text).join(' '),
                   fontSize: lineLayout.resolvedFontSize,
                   maxWidth: maxLineWidth,
+                  spans: lineSpans,
                 );
                 extraLines.add(overflowEl);
                 tail = overflowEl;
@@ -440,16 +461,18 @@ class HandwritingOcrService extends ChangeNotifier {
             } else {
               final created = <TextElement>[];
               for (int wi = 0; wi < wrappedLines.length; wi++) {
+                final lineSpans = _buildSpansFromColoredWords(wrappedLines[wi]);
                 created.add(
                   TextElement(
                     id: _uuid.v4(),
                     pageIndex: pageIndex,
-                    colorValue: groupCluster.strokes.first.colorValue,
+                    colorValue: lineSpans.first.colorValue,
                     x: startX,
                     y: baseLineY + wi * lineStep,
-                    text: wrappedLines[wi],
+                    text: wrappedLines[wi].map((w) => w.text).join(' '),
                     fontSize: lineLayout.resolvedFontSize,
                     maxWidth: maxLineWidth,
+                    spans: lineSpans,
                     sourceStrokeIds: wi == 0
                         ? groupCluster.strokes.map((s) => s.id).toList()
                         : const [],
@@ -470,15 +493,17 @@ class HandwritingOcrService extends ChangeNotifier {
               );
             }
           } else {
+            final lineSpans = _buildSpansFromColoredWords(newColoredWords);
             final newTextElement = TextElement(
               id: _uuid.v4(),
               pageIndex: pageIndex,
-              colorValue: groupCluster.strokes.first.colorValue,
+              colorValue: lineSpans.first.colorValue,
               x: groupX,
               y: lineLayout.anchorY,
-              text: groupText,
+              text: newColoredWords.map((w) => w.text).join(' '),
               fontSize: lineLayout.resolvedFontSize,
               maxWidth: PageConstants.a4Width - groupX - 24.0,
+              spans: lineSpans,
               sourceStrokeIds: groupCluster.strokes.map((s) => s.id).toList(),
             );
 
@@ -513,31 +538,104 @@ class HandwritingOcrService extends ChangeNotifier {
     return null;
   }
 
-  List<String> _wrapWordsToWidth({
-    required List<String> words,
+  List<List<_ColoredWord>> _wrapColoredWordsToWidth({
+    required List<_ColoredWord> words,
     required double maxWidth,
     required double fontSize,
   }) {
-    final lines = <String>[];
-    String current = '';
+    final lines = <List<_ColoredWord>>[];
+    List<_ColoredWord> current = [];
     for (final w in words) {
-      final candidate = current.isEmpty ? w : '$current $w';
+      final candText = current.isEmpty
+          ? w.text
+          : '${current.map((e) => e.text).join(' ')} ${w.text}';
       final painter = TextPainter(
         text: TextSpan(
-          text: candidate,
+          text: candText,
           style: TextStyle(fontSize: fontSize, fontFamily: 'Roboto'),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
       if (current.isNotEmpty && painter.width > maxWidth) {
         lines.add(current);
-        current = w;
+        current = [w];
       } else {
-        current = candidate;
+        current.add(w);
       }
     }
     if (current.isNotEmpty) lines.add(current);
     return lines;
+  }
+
+  List<_ColoredWord> _extractColoredWordsFromElement(TextElement el) {
+    if (el.spans.isEmpty) {
+      return el.text
+          .trim()
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .map((w) => _ColoredWord(text: w, colorValue: el.colorValue))
+          .toList();
+    }
+    final result = <_ColoredWord>[];
+    for (final sp in el.spans) {
+      for (final w in sp.text.trim().split(RegExp(r'\s+'))) {
+        if (w.isNotEmpty) {
+          result.add(_ColoredWord(text: w, colorValue: sp.colorValue));
+        }
+      }
+    }
+    return result;
+  }
+
+  List<TextColorSpan> _buildSpansFromColoredWords(List<_ColoredWord> words) {
+    if (words.isEmpty) return const [];
+    final spans = <TextColorSpan>[];
+    int curColor = words.first.colorValue;
+    final buf = StringBuffer(words.first.text);
+
+    for (int i = 1; i < words.length; i++) {
+      final w = words[i];
+      if (w.colorValue == curColor) {
+        buf.write(' ${w.text}');
+      } else {
+        // Mantiene lo spazio di separazione prima del cambio colore
+        buf.write(' ');
+        spans.add(TextColorSpan(text: buf.toString(), colorValue: curColor));
+        curColor = w.colorValue;
+        buf
+          ..clear()
+          ..write(w.text);
+      }
+    }
+    spans.add(TextColorSpan(text: buf.toString(), colorValue: curColor));
+    return spans;
+  }
+
+  List<HandwritingLineCluster> _splitClusterByColorRuns(
+    HandwritingLineCluster cluster,
+  ) {
+    final sorted = List<StrokeElement>.from(cluster.strokes)
+      ..sort((a, b) => a.boundingBox.left.compareTo(b.boundingBox.left));
+    if (sorted.isEmpty) return const [];
+
+    final runs = <List<StrokeElement>>[
+      [sorted.first],
+    ];
+    for (int i = 1; i < sorted.length; i++) {
+      if (sorted[i].colorValue == runs.last.first.colorValue) {
+        runs.last.add(sorted[i]);
+      } else {
+        runs.add([sorted[i]]);
+      }
+    }
+
+    return runs.map((strokes) {
+      var rect = strokes.first.boundingBox;
+      for (int i = 1; i < strokes.length; i++) {
+        rect = rect.expandToInclude(strokes[i].boundingBox);
+      }
+      return HandwritingLineCluster(strokes: strokes, boundingBox: rect);
+    }).toList();
   }
 
   /// Divide una riga in più blocchi se tra una parola e la successiva c'è uno spazio
@@ -685,4 +783,10 @@ class HandwritingOcrService extends ChangeNotifier {
     _recognizer?.close();
     super.dispose();
   }
+}
+
+class _ColoredWord {
+  final String text;
+  final int colorValue;
+  const _ColoredWord({required this.text, required this.colorValue});
 }

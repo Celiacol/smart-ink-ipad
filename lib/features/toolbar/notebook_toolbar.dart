@@ -37,6 +37,9 @@ class NotebookToolbar extends StatelessWidget {
   final bool allowFingerDrawing;
   final ValueChanged<bool> onAllowFingerDrawingChanged;
 
+  final bool verticalSpaceMovesBelow;
+  final ValueChanged<bool> onVerticalSpaceDirectionChanged;
+
   final VoidCallback onCalibrateHandwriting;
   final VoidCallback onExportPdf;
 
@@ -66,6 +69,8 @@ class NotebookToolbar extends StatelessWidget {
     required this.onBackgroundChanged,
     required this.allowFingerDrawing,
     required this.onAllowFingerDrawingChanged,
+    required this.verticalSpaceMovesBelow,
+    required this.onVerticalSpaceDirectionChanged,
     required this.onCalibrateHandwriting,
     required this.onExportPdf,
   });
@@ -119,6 +124,16 @@ class NotebookToolbar extends StatelessWidget {
               type: ToolType.selection,
             ),
             _buildToolButton(
+              icon: Icons.crop_free_rounded,
+              label: 'Lazo Sposta',
+              type: ToolType.lassoMove,
+            ),
+            _buildToolButton(
+              icon: Icons.height_rounded,
+              label: 'Sposta Spazio',
+              type: ToolType.verticalSpace,
+            ),
+            _buildToolButton(
               icon: Icons.auto_awesome_rounded,
               label: 'Converti Cerchio',
               type: ToolType.lassoConvert,
@@ -128,6 +143,27 @@ class NotebookToolbar extends StatelessWidget {
               label: 'Compatta Testo',
               type: ToolType.lassoReflow,
             ),
+
+            if (activeToolType == ToolType.verticalSpace) ...[
+              const SizedBox(width: 8),
+              DropdownButton<bool>(
+                value: verticalSpaceMovesBelow,
+                underline: const SizedBox.shrink(),
+                onChanged: (val) {
+                  if (val != null) onVerticalSpaceDirectionChanged(val);
+                },
+                items: const [
+                  DropdownMenuItem(
+                    value: true,
+                    child: Text('Sposta: Sotto ↓'),
+                  ),
+                  DropdownMenuItem(
+                    value: false,
+                    child: Text('Sposta: Sopra ↑'),
+                  ),
+                ],
+              ),
+            ],
 
             if (activeToolType == ToolType.shape) ...[
               const SizedBox(width: 8),

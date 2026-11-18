@@ -178,17 +178,29 @@ class A4PagePainter extends CustomPainter {
   }
 
   void _drawTextElement(Canvas canvas, TextElement textElement) {
-    final textStyle = TextStyle(
+    final baseStyle = TextStyle(
       color: textElement.color,
       fontSize: textElement.fontSize,
       fontFamily: textElement.fontFamily,
       height: 1.32,
     );
 
-    final textSpan = TextSpan(
-      text: textElement.text,
-      style: textStyle,
-    );
+    final TextSpan textSpan = textElement.spans.isNotEmpty
+        ? TextSpan(
+            style: baseStyle,
+            children: textElement.spans
+                .map(
+                  (s) => TextSpan(
+                    text: s.text,
+                    style: baseStyle.copyWith(color: Color(s.colorValue)),
+                  ),
+                )
+                .toList(),
+          )
+        : TextSpan(
+            text: textElement.text,
+            style: baseStyle,
+          );
 
     final textPainter = TextPainter(
       text: textSpan,
