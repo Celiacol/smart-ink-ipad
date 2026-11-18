@@ -1993,12 +1993,11 @@
       if (currentLine) packedLines.push(currentLine);
       ctx.restore();
 
-      // 5. Crea i nuovi blocchi posizionati sulle righe disponibili (riempiendo dall'alto verso il basso)
+      // 5. Crea i nuovi blocchi posizionati su tutte le righe consecutive (senza lasciare righe vuote!)
       const newElements = [];
+      const firstLineBaseY = rowGroups[0].baselineY;
       for (let idx = 0; idx < packedLines.length; idx++) {
-        const targetBaseY = idx < rowGroups.length
-          ? rowGroups[idx].baselineY
-          : (rowGroups[rowGroups.length - 1].baselineY + (idx - rowGroups.length + 1) * defaultLineStep);
+        const targetBaseY = firstLineBaseY + idx * defaultLineStep;
 
         newElements.push({
           id: 'txt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + '_' + idx,

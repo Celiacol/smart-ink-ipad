@@ -34,7 +34,6 @@ class PaginatedNotebookView extends StatefulWidget {
 }
 
 class _PaginatedNotebookViewState extends State<PaginatedNotebookView> {
-  final ScrollController _scrollController = ScrollController();
   final TransformationController _zoomController = TransformationController();
   late final PullUpUnlockController _unlockController;
 
@@ -44,6 +43,7 @@ class _PaginatedNotebookViewState extends State<PaginatedNotebookView> {
   /// Pointer attivo che sta attualmente scrivendo sul foglio.
   int? _activeDrawingPointerId;
   bool _isStylusActive = false;
+  bool _didCenterInitialViewport = false;
 
   @override
   void initState() {
@@ -55,16 +55,13 @@ class _PaginatedNotebookViewState extends State<PaginatedNotebookView> {
 
   void _handleUnlockNextPage() {
     widget.commandManager.executeCommand(AddPageCommand());
-    // Dopo aver sbloccato la nuova pagina, scorre dolcemente per mostrarla
+    // Dopo aver sbloccato la nuova pagina, sposta dolcemente la visuale per mostrarla
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          (_scrollController.offset + 260.0)
-              .clamp(0.0, _scrollController.position.maxScrollExtent),
-          duration: const Duration(milliseconds: 350),
-          curve: Curves.easeOutCubic,
-        );
-      }
+      if (!mounted) return;
+      final current = _zoomController.value.clone();
+      final scale = current.getMaxScaleOnAxis();
+      current.translate(0.0, -240.0 / scale);
+      _zoomController.value = current;
     });
   }
 
@@ -72,37 +69,44 @@ class _PaginatedNotebookViewState extends State<PaginatedNotebookView> {
   void dispose() {
     _unlockController.dispose();
     _zoomController.dispose();
-    _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: widget.commandManager,
-      builder: (context, _) {
-        final pages = widget.commandManager.state.pages;
-        // Blocca lo scorrimento verticale quando la penna sta scrivendo o quando si disegna a 1 dito
-        final lockScrollForDrawing = _isStylusActive ||
-            (widget.allowFingerDrawing && _activeTouchPointers.length == 1);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!_didCenterInitialViewport && constraints.maxWidth > PageConstants.a4Width) {
+          _didCenterInitialViewport = true;
+          final dx = (constraints.maxWidth - (PageConstants.a4Width + 32.0)) / 2.0;
+          _zoomController.value = Matrix4.translationValues(dx, 0.0, 0.0);
+        }
 
-        return InteractiveViewer(
-          transformationController: _zoomController,
-          minScale: 0.5,
-          maxScale: 3.0,
-          panEnabled: !lockScrollForDrawing,
-          scaleEnabled: !_isStylusActive,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: _handleOverscrollForPageUnlock,
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              physics: lockScrollForDrawing
-                  ? const NeverScrollableScrollPhysics()
-                  : const BouncingScrollPhysics(
-                      parent: AlwaysScrollableScrollPhysics(),
-                    ),
-              padding: const EdgeInsets.symmetric(vertical: 28.0, horizontal: 16.0),
-              child: Center(
+        return AnimatedBuilder(
+          animation: widget.commandManager,
+          builder: (context, _) {
+            final pages = widget.commandManager.state.pages;
+            // Blocca pan dello sfondo solo mentre la penna scrive o mentre si disegna con 1 dito;
+            // con 2 dita (Pinch-to-Zoom) è SEMPRE abilitato!
+            final lockPanForDrawing = _isStylusActive ||
+                (widget.allowFingerDrawing && _activeTouchPointers.length == 1);
+
+            return InteractiveViewer(
+              transformationController: _zoomController,
+              constrained: false,
+              boundaryMargin: const EdgeInsets.symmetric(
+                horizontal: 320.0,
+                vertical: 240.0,
+              ),
+              minScale: 0.5,
+              maxScale: 3.0,
+              panEnabled: !lockPanForDrawing,
+              scaleEnabled: !_isStylusActive,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 28.0,
+                  horizontal: 16.0,
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -119,28 +123,11 @@ class _PaginatedNotebookViewState extends State<PaginatedNotebookView> {
                   ],
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
-  }
-
-  /// Intercetta il trascinamento verso l'alto oltre il fondo dell'ultima pagina
-  /// (overscroll inferiore) per alimentare la circonferenza di sblocco pagina.
-  bool _handleOverscrollForPageUnlock(ScrollNotification notification) {
-    if (notification is ScrollUpdateNotification) {
-      final metrics = notification.metrics;
-      final overscrollBottom = metrics.pixels - metrics.maxScrollExtent;
-      if (overscrollBottom > 0) {
-        _unlockController.updatePullUpDistance(overscrollBottom);
-      } else if (_unlockController.currentPullDistance > 0) {
-        _unlockController.updatePullUpDistance(0);
-      }
-    } else if (notification is ScrollEndNotification) {
-      _unlockController.onPointerReleased();
-    }
-    return false;
   }
 
   Widget _buildSingleA4Sheet(PageModel page, int totalPages) {

@@ -1,5 +1,7 @@
 import 'dart:math' as math;
-import 'dart:ui' show Rect;
+import 'dart:ui' show Rect, TextBaseline, TextDirection;
+
+import 'package:flutter/painting.dart' show TextPainter, TextSpan, TextStyle;
 
 import '../../core/constants/page_constants.dart';
 import '../../core/models/canvas_element.dart';
@@ -130,7 +132,10 @@ class SpatialLayoutAnalyzer {
           (firstLineMaxX <= existingBox.left + 8.0);
       if (!horizontallyDisjoint) continue;
 
-      final existingAscent = existing.fontSize * 0.82;
+      final existingAscent = _measureFontAscent(
+        existing.fontSize,
+        fontFamily: existing.fontFamily,
+      );
       final existingLines = existing.text.split('\n');
       bool matched = false;
       for (int li = 0; li < existingLines.length; li++) {
@@ -158,7 +163,8 @@ class SpatialLayoutAnalyzer {
       if (matched) break;
     }
 
-    final anchorY = targetBaselineY - (resolvedFontSize * 0.82);
+    final resolvedAscent = _measureFontAscent(resolvedFontSize);
+    final anchorY = targetBaselineY - resolvedAscent;
 
     // 6. Calcola l'eventuale indentazione (spazi iniziali) per ogni riga
     //    se l'utente è andato a capo partendo più a destra.
@@ -183,6 +189,23 @@ class SpatialLayoutAnalyzer {
       estimatedHandwritingHeight: handwritingHeight,
       resolvedFontSize: resolvedFontSize,
     );
+  }
+
+  /// Misura la distanza esatta (in pt A4) tra l'angolo superiore di `TextPainter`
+  /// e la baseline alfabetica reale, così il testo poggia preciso sopra la riga.
+  double _measureFontAscent(double fontSize, {String fontFamily = 'Roboto'}) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: 'Hg',
+        style: TextStyle(
+          fontSize: fontSize,
+          fontFamily: fontFamily,
+          height: 1.32,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    return painter.computeDistanceToActualBaseline(TextBaseline.alphabetic);
   }
 
   /// Stima la baseline reale dei tratti ignorando le code discendenti ('p', 'g', 'q', 'y').

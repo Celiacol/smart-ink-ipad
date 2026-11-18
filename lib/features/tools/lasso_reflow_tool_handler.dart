@@ -126,11 +126,10 @@ class LassoReflowToolHandler implements CanvasToolHandler {
     }
 
     final reformatted = <TextElement>[];
+    final firstLineY = rowGroups.first.first.y;
     for (int idx = 0; idx < packedLines.length; idx++) {
-      final targetY = idx < rowGroups.length
-          ? rowGroups[idx].first.y
-          : rowGroups.last.first.y +
-              (idx - rowGroups.length + 1) * defaultLineStep;
+      // Riempie tutte le righe consecutive senza lasciare righe vuote di scarto!
+      final targetY = firstLineY + idx * defaultLineStep;
 
       reformatted.add(
         TextElement(
