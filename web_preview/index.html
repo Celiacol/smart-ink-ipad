@@ -246,6 +246,9 @@
         box-shadow: none;
         page-break-after: always;
       }
+      .page-footer {
+        display: none !important;
+      }
     }
 
     /* Modale leggera di Calibrazione Calligrafia (3 frasi offline) */
@@ -369,7 +372,7 @@
       <option value="blank">Foglio Bianco</option>
     </select>
 
-    <button class="btn primary" onclick="window.print()">📄 Stampa / PDF A4</button>
+    <button class="btn primary" id="exportCleanPdfBtn">📄 Esporta PDF / Stampa</button>
   </div>
 
   <!-- Indicatore flottante: non altera MAI la barra degli strumenti -->
@@ -421,6 +424,7 @@
     let sizeMode = 'adaptiveSnap';
     let fixedFontSize = 14;
     let bgTemplate = 'ruled';
+    let isCleanPdfExportMode = false;
     let zoomLevel = 1.0;
 
     // Stato Apple Pencil & Palm Rejection
@@ -628,35 +632,37 @@
     function drawPageCanvas(ctx, page, previewFn) {
       ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
 
-      // 1. Sfondo
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.lineWidth = 0.8;
-      if (bgTemplate === 'ruled') {
-        ctx.strokeStyle = 'rgba(252, 165, 165, 0.6)';
-        ctx.beginPath();
-        ctx.moveTo(52, 0);
-        ctx.lineTo(52, A4_HEIGHT);
-        ctx.stroke();
-
+      // 1. Sfondo (omisssione righe/quadretti/puntini durante l'esportazione PDF per avere un foglio bianco pulito!)
+      if (!isCleanPdfExportMode) {
         ctx.strokeStyle = '#e2e8f0';
-        for (let y = 56; y <= A4_HEIGHT - 42; y += 24) {
+        ctx.lineWidth = 0.8;
+        if (bgTemplate === 'ruled') {
+          ctx.strokeStyle = 'rgba(252, 165, 165, 0.6)';
           ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(A4_WIDTH, y);
+          ctx.moveTo(52, 0);
+          ctx.lineTo(52, A4_HEIGHT);
           ctx.stroke();
-        }
-      } else if (bgTemplate === 'grid') {
-        for (let x = 14.17; x < A4_WIDTH; x += 14.17) {
-          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, A4_HEIGHT); ctx.stroke();
-        }
-        for (let y = 14.17; y < A4_HEIGHT; y += 14.17) {
-          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(A4_WIDTH, y); ctx.stroke();
-        }
-      } else if (bgTemplate === 'dotted') {
-        ctx.fillStyle = '#cbd5e1';
-        for (let y = 56; y <= A4_HEIGHT - 42; y += 18) {
-          for (let x = 24; x <= A4_WIDTH - 24; x += 18) {
-            ctx.beginPath(); ctx.arc(x, y, 1.1, 0, Math.PI * 2); ctx.fill();
+
+          ctx.strokeStyle = '#e2e8f0';
+          for (let y = 56; y <= A4_HEIGHT - 42; y += 24) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(A4_WIDTH, y);
+            ctx.stroke();
+          }
+        } else if (bgTemplate === 'grid') {
+          for (let x = 14.17; x < A4_WIDTH; x += 14.17) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, A4_HEIGHT); ctx.stroke();
+          }
+          for (let y = 14.17; y < A4_HEIGHT; y += 14.17) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(A4_WIDTH, y); ctx.stroke();
+          }
+        } else if (bgTemplate === 'dotted') {
+          ctx.fillStyle = '#cbd5e1';
+          for (let y = 56; y <= A4_HEIGHT - 42; y += 18) {
+            for (let x = 24; x <= A4_WIDTH - 24; x += 18) {
+              ctx.beginPath(); ctx.arc(x, y, 1.1, 0, Math.PI * 2); ctx.fill();
+            }
           }
         }
       }
@@ -1898,6 +1904,34 @@
     document.getElementById('bgTemplateSelect').addEventListener('change', e => {
       bgTemplate = e.target.value;
       renderAllPages();
+    });
+
+    // Esportazione PDF Pulita: rimuove righe/quadretti generando un documento su sfondo bianco
+    function exportCleanWhitePdf() {
+      const prevZoom = zoomLevel;
+      isCleanPdfExportMode = true;
+      zoomLevel = 1.0;
+      renderAllPages();
+      setTimeout(() => {
+        window.print();
+        isCleanPdfExportMode = false;
+        zoomLevel = prevZoom;
+        renderAllPages();
+      }, 60);
+    }
+
+    document.getElementById('exportCleanPdfBtn').addEventListener('click', exportCleanWhitePdf);
+    window.addEventListener('beforeprint', () => {
+      if (!isCleanPdfExportMode) {
+        isCleanPdfExportMode = true;
+        renderAllPages();
+      }
+    });
+    window.addEventListener('afterprint', () => {
+      if (isCleanPdfExportMode) {
+        isCleanPdfExportMode = false;
+        renderAllPages();
+      }
     });
 
     // Verifica se un punto (px, py) è dentro il poligono tracciato dal lazo (Ray Casting)

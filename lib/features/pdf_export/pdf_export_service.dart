@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:pdf/pdf.dart';
@@ -12,16 +13,20 @@ import '../../core/models/page_model.dart';
 /// Servizio indipendente per l'esportazione in PDF A4 vettoriale 1:1
 /// e la stampa diretta (AirPrint su iPad / Mopria su Android).
 ///
-/// Poiché l'intera app lavora in coordinate logiche A4 (595.28 x 841.89 pt),
-/// ogni elemento (`TextElement`, `StrokeElement`, `ShapeElement`) viene posizionato
-/// nel PDF senza alcuna distorsione o perdita di qualità.
+/// Di default genera un documento professionale su **sfondo bianco pulito**
+/// (senza la griglia di righe/quadretti usata come guida durante la scrittura),
+/// mantenendo testo convertito, disegni e figure esattamente nelle stesse
+/// posizioni logiche A4 (595.28 x 841.89 pt).
 class PdfExportService {
   const PdfExportService();
 
   /// Genera i byte del file PDF A4 a partire dallo stato attuale del documento.
+  ///
+  /// [includePageBackgroundGuides] è `false` di default per produrre un PDF
+  /// su foglio bianco pulito pronto per la stampa e la condivisione.
   Future<Uint8List> generatePdfBytes(
     DocumentState documentState, {
-    bool includePageBackgroundGuides = true,
+    bool includePageBackgroundGuides = false,
   }) async {
     final pdf = pw.Document(
       title: documentState.title,
@@ -34,12 +39,13 @@ class PdfExportService {
           pageFormat: PdfPageFormat.a4,
           margin: pw.EdgeInsets.zero,
           build: (pw.Context context) {
-            return pw.SizedBox(
+            return pw.Container(
               width: PageConstants.a4Width,
               height: PageConstants.a4Height,
+              color: PdfColors.white,
               child: pw.Stack(
                 children: [
-                  // 1. Disegna eventuale rigatura/quadrettatura + tracciati vettoriali
+                  // 1. Livello inferiore: eventuale sfondo opzionale + evidenziatori (sotto al testo)
                   pw.CustomPaint(
                     size: const PdfPoint(
                       PageConstants.a4Width,
@@ -50,17 +56,15 @@ class PdfExportService {
                         _paintPdfBackgroundGuides(canvas, page.background);
                       }
                       for (final element in page.elements) {
-                        if (element is StrokeElement) {
+                        if (element is StrokeElement && element.isHighlighter) {
                           _paintPdfStroke(canvas, element);
-                        } else if (element is ShapeElement) {
-                          _paintPdfShape(canvas, element);
                         }
                       }
                     },
                   ),
 
-                  // 2. Posiziona tutti i blocchi di testo convertiti come vero testo
-                  //    vettoriale selezionabile e ricercabile nel PDF!
+                  // 2. Livello intermedio: tutti i blocchi di testo convertiti come vero testo
+                  //    vettoriale selezionabile e ricercabile nel PDF alle stesse coordinate!
                   for (final element in page.elements.whereType<TextElement>())
                     pw.Positioned(
                       left: element.x,
@@ -73,12 +77,29 @@ class PdfExportService {
                           element.text,
                           style: pw.TextStyle(
                             fontSize: element.fontSize,
-                            color: PdfColor.fromInt(element.colorValue),
+                            color: _solidPdfColor(element.colorValue),
                             lineSpacing: element.fontSize * 0.25,
                           ),
                         ),
                       ),
                     ),
+
+                  // 3. Livello superiore: tratti a mano libera (disegni/schemi) e forme geometriche
+                  pw.CustomPaint(
+                    size: const PdfPoint(
+                      PageConstants.a4Width,
+                      PageConstants.a4Height,
+                    ),
+                    painter: (PdfGraphics canvas, PdfPoint size) {
+                      for (final element in page.elements) {
+                        if (element is StrokeElement && !element.isHighlighter) {
+                          _paintPdfStroke(canvas, element);
+                        } else if (element is ShapeElement) {
+                          _paintPdfShape(canvas, element);
+                        }
+                      }
+                    },
+                  ),
                 ],
               ),
             );
@@ -90,18 +111,43 @@ class PdfExportService {
     return pdf.save();
   }
 
-  /// Apre la finestra di stampa/condivisione PDF nativa di iPadOS / Android.
-  Future<void> printOrShareDocument(DocumentState documentState) async {
+  /// Apre l'anteprima pulita (sfondo bianco) e la finestra di esportazione/stampa PDF nativa.
+  Future<void> printOrShareDocument(
+    DocumentState documentState, {
+    bool includePageBackgroundGuides = false,
+  }) async {
     await Printing.layoutPdf(
       name: '${documentState.title}.pdf',
       format: PdfPageFormat.a4,
-      onLayout: (_) => generatePdfBytes(documentState),
+      onLayout: (_) => generatePdfBytes(
+        documentState,
+        includePageBackgroundGuides: includePageBackgroundGuides,
+      ),
     );
   }
 
   /// Nota sulle coordinate PDF: in `PdfGraphics` l'origine Y=0 è in basso a sinistra,
   /// perciò convertiamo `yPdf = a4Height - yScreen`.
   double _toPdfY(double screenY) => PageConstants.a4Height - screenY;
+
+  PdfColor _solidPdfColor(int argb) {
+    final r = ((argb >> 16) & 0xFF) / 255.0;
+    final g = ((argb >> 8) & 0xFF) / 255.0;
+    final b = (argb & 0xFF) / 255.0;
+    return PdfColor(r, g, b);
+  }
+
+  PdfColor _highlighterPdfColor(int argb) {
+    // Simula la trasparenza dell'evidenziatore schiarendo il colore verso il bianco (35% intensità)
+    final r = ((argb >> 16) & 0xFF) / 255.0;
+    final g = ((argb >> 8) & 0xFF) / 255.0;
+    final b = (argb & 0xFF) / 255.0;
+    return PdfColor(
+      1.0 - (1.0 - r) * 0.35,
+      1.0 - (1.0 - g) * 0.35,
+      1.0 - (1.0 - b) * 0.35,
+    );
+  }
 
   void _paintPdfBackgroundGuides(
     PdfGraphics canvas,
@@ -144,10 +190,14 @@ class PdfExportService {
   void _paintPdfStroke(PdfGraphics canvas, StrokeElement stroke) {
     if (stroke.points.isEmpty) return;
 
+    final color = stroke.isHighlighter
+        ? _highlighterPdfColor(stroke.colorValue)
+        : _solidPdfColor(stroke.colorValue);
+
     canvas
-      ..setStrokeColor(PdfColor.fromInt(stroke.colorValue))
+      ..setStrokeColor(color)
       ..setLineWidth(stroke.strokeWidth)
-      ..setLineCap(PdfLineCap.round)
+      ..setLineCap(stroke.isHighlighter ? PdfLineCap.butt : PdfLineCap.round)
       ..setLineJoin(PdfLineJoin.round);
 
     final first = stroke.points.first;
@@ -161,8 +211,10 @@ class PdfExportService {
 
   void _paintPdfShape(PdfGraphics canvas, ShapeElement shape) {
     canvas
-      ..setStrokeColor(PdfColor.fromInt(shape.colorValue))
-      ..setLineWidth(shape.strokeWidth);
+      ..setStrokeColor(_solidPdfColor(shape.colorValue))
+      ..setLineWidth(shape.strokeWidth)
+      ..setLineCap(PdfLineCap.round)
+      ..setLineJoin(PdfLineJoin.round);
 
     final x1 = shape.startPoint.dx;
     final y1 = _toPdfY(shape.startPoint.dy);
@@ -191,10 +243,30 @@ class PdfExportService {
           ..strokePath();
         break;
       case ShapeKind.line:
+        canvas
+          ..moveTo(x1, y1)
+          ..lineTo(x2, y2)
+          ..strokePath();
+        break;
       case ShapeKind.arrow:
         canvas
           ..moveTo(x1, y1)
           ..lineTo(x2, y2)
+          ..strokePath();
+        final angle = math.atan2(y2 - y1, x2 - x1);
+        const headLength = 14.0;
+        const headAngle = 0.5;
+        canvas
+          ..moveTo(x2, y2)
+          ..lineTo(
+            x2 - headLength * math.cos(angle - headAngle),
+            y2 - headLength * math.sin(angle - headAngle),
+          )
+          ..moveTo(x2, y2)
+          ..lineTo(
+            x2 - headLength * math.cos(angle + headAngle),
+            y2 - headLength * math.sin(angle + headAngle),
+          )
           ..strokePath();
         break;
     }
