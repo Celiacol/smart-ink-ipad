@@ -40,6 +40,11 @@ class NotebookToolbar extends StatelessWidget {
   final bool verticalSpaceMovesBelow;
   final ValueChanged<bool> onVerticalSpaceDirectionChanged;
 
+  final double zoomScale;
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onZoomReset;
+
   final VoidCallback onCalibrateHandwriting;
   final VoidCallback onExportPdf;
 
@@ -71,6 +76,10 @@ class NotebookToolbar extends StatelessWidget {
     required this.onAllowFingerDrawingChanged,
     required this.verticalSpaceMovesBelow,
     required this.onVerticalSpaceDirectionChanged,
+    required this.zoomScale,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onZoomReset,
     required this.onCalibrateHandwriting,
     required this.onExportPdf,
   });
@@ -261,75 +270,6 @@ class NotebookToolbar extends StatelessWidget {
                       onSelected: (penOnly) =>
                           onAllowFingerDrawingChanged(!penOnly),
                     ),
-                    const SizedBox(width: 8),
-                    ActionChip(
-                      avatar: Icon(
-                        ocrService.calibrationProfile.isCalibrated
-                            ? Icons.verified_rounded
-                            : Icons.tune_rounded,
-                        size: 17,
-                        color: ocrService.calibrationProfile.isCalibrated
-                            ? const Color(0xFF16A34A)
-                            : const Color(0xFF2563EB),
-                      ),
-                      label: Text(
-                        ocrService.calibrationProfile.isCalibrated
-                            ? 'Calibrata ✓'
-                            : 'Calibra Scrittura',
-                      ),
-                      onPressed: onCalibrateHandwriting,
-                    ),
-                    const SizedBox(width: 10),
-
-                    // Scelta tra Punto 1 (Auto-Snap a Stili) e Punto 2 (Fissa da Toolbar)
-                    SegmentedButton<TextSizeMode>(
-                      segments: const [
-                        const ButtonSegment<TextSizeMode>(
-                          value: TextSizeMode.adaptiveSnap,
-                          label: Text(
-                            'Dim. Auto-Snap (BETA)',
-                            style: TextStyle(
-                              color: Color(0xFFDC2626),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          icon: Icon(
-                            Icons.auto_fix_high_rounded,
-                            size: 16,
-                            color: Color(0xFFDC2626),
-                          ),
-                        ),
-                        ButtonSegment<TextSizeMode>(
-                          value: TextSizeMode.fixedFromToolbar,
-                          label: Text('Dim. Fissa'),
-                          icon: Icon(Icons.format_size_rounded, size: 16),
-                        ),
-                      ],
-                      selected: {ocrService.textSizeMode},
-                      onSelectionChanged: (selection) {
-                        ocrService.setTextSizeMode(selection.first);
-                      },
-                    ),
-
-                    if (ocrService.textSizeMode ==
-                        TextSizeMode.fixedFromToolbar) ...[
-                      const SizedBox(width: 8),
-                      DropdownButton<double>(
-                        value: ocrService.fixedFontSize,
-                        underline: const SizedBox.shrink(),
-                        onChanged: (size) {
-                          if (size != null) ocrService.setFixedFontSize(size);
-                        },
-                        items: PageConstants.standardFontSizes
-                            .map(
-                              (pt) => DropdownMenuItem<double>(
-                                value: pt,
-                                child: Text('${pt.toInt()} pt'),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ],
                   ],
                 );
               },
@@ -337,7 +277,7 @@ class NotebookToolbar extends StatelessWidget {
 
             _buildVerticalDivider(),
 
-            // 4. Undo / Redo + Sfondo A4 + Esporta PDF
+            // 4. Undo / Redo
             IconButton(
               tooltip: 'Annulla (Undo)',
               onPressed: canUndo ? onUndo : null,
@@ -348,33 +288,13 @@ class NotebookToolbar extends StatelessWidget {
               onPressed: canRedo ? onRedo : null,
               icon: const Icon(Icons.redo_rounded),
             ),
-            const SizedBox(width: 6),
-            DropdownButton<PageBackgroundTemplate>(
-              value: currentBackground,
-              underline: const SizedBox.shrink(),
-              onChanged: (bg) {
-                if (bg != null) onBackgroundChanged(bg);
-              },
-              items: const [
-                DropdownMenuItem(
-                  value: PageBackgroundTemplate.ruled,
-                  child: Text('Foglio a Righe'),
-                ),
-                DropdownMenuItem(
-                  value: PageBackgroundTemplate.grid,
-                  child: Text('Foglio a Quadretti'),
-                ),
-                DropdownMenuItem(
-                  value: PageBackgroundTemplate.dotted,
-                  child: Text('Foglio Puntinato'),
-                ),
-                DropdownMenuItem(
-                  value: PageBackgroundTemplate.blank,
-                  child: Text('Foglio Bianco'),
-                ),
-              ],
-            ),
-            const SizedBox(width: 10),
+
+            _buildVerticalDivider(),
+
+            // 5. Menu a tre lineette (☰) con: Dim. Testo (+ pt), Sfondo Foglio, Calibrazione e Zoom %
+            _buildSettingsHamburgerMenu(context),
+
+            const SizedBox(width: 8),
             FilledButton.icon(
               onPressed: onExportPdf,
               icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
@@ -383,6 +303,210 @@ class NotebookToolbar extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSettingsHamburgerMenu(BuildContext context) {
+    return MenuAnchor(
+      builder: (context, controller, child) {
+        return OutlinedButton.icon(
+          onPressed: () {
+            if (controller.isOpen) {
+              controller.close();
+            } else {
+              controller.open();
+            }
+          },
+          icon: const Icon(Icons.menu_rounded, size: 20),
+          label: const Text('Opzioni'),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          ),
+        );
+      },
+      menuChildren: [
+        AnimatedBuilder(
+          animation: ocrService,
+          builder: (context, _) {
+            return Padding(
+              padding: const EdgeInsets.all(14.0),
+              child: SizedBox(
+                width: 280,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // A. Dimensione Testo (+ pt)
+                    const Text(
+                      'Dimensione Testo',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    SegmentedButton<TextSizeMode>(
+                      segments: const [
+                        ButtonSegment<TextSizeMode>(
+                          value: TextSizeMode.adaptiveSnap,
+                          label: Text(
+                            'Auto-Snap (BETA)',
+                            style: TextStyle(
+                              color: Color(0xFFDC2626),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        ButtonSegment<TextSizeMode>(
+                          value: TextSizeMode.fixedFromToolbar,
+                          label: Text(
+                            'Fissa',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                      selected: {ocrService.textSizeMode},
+                      onSelectionChanged: (sel) =>
+                          ocrService.setTextSizeMode(sel.first),
+                    ),
+                    if (ocrService.textSizeMode ==
+                        TextSizeMode.fixedFromToolbar) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Grandezza font:'),
+                          DropdownButton<double>(
+                            value: ocrService.fixedFontSize,
+                            underline: const SizedBox.shrink(),
+                            onChanged: (size) {
+                              if (size != null) ocrService.setFixedFontSize(size);
+                            },
+                            items: PageConstants.standardFontSizes
+                                .map(
+                                  (pt) => DropdownMenuItem<double>(
+                                    value: pt,
+                                    child: Text('${pt.toInt()} pt'),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ],
+                      ),
+                    ],
+
+                    const Divider(height: 22),
+
+                    // B. Scelta del Foglio
+                    const Text(
+                      'Tipo di Foglio A4',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    DropdownButton<PageBackgroundTemplate>(
+                      isExpanded: true,
+                      value: currentBackground,
+                      underline: const SizedBox.shrink(),
+                      onChanged: (bg) {
+                        if (bg != null) onBackgroundChanged(bg);
+                      },
+                      items: const [
+                        DropdownMenuItem(
+                          value: PageBackgroundTemplate.ruled,
+                          child: Text('Foglio a Righe'),
+                        ),
+                        DropdownMenuItem(
+                          value: PageBackgroundTemplate.grid,
+                          child: Text('Foglio a Quadretti'),
+                        ),
+                        DropdownMenuItem(
+                          value: PageBackgroundTemplate.dotted,
+                          child: Text('Foglio Puntinato'),
+                        ),
+                        DropdownMenuItem(
+                          value: PageBackgroundTemplate.blank,
+                          child: Text('Foglio Bianco'),
+                        ),
+                      ],
+                    ),
+
+                    const Divider(height: 22),
+
+                    // C. Calibrazione
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: onCalibrateHandwriting,
+                        icon: Icon(
+                          ocrService.calibrationProfile.isCalibrated
+                              ? Icons.verified_rounded
+                              : Icons.tune_rounded,
+                          size: 18,
+                          color: ocrService.calibrationProfile.isCalibrated
+                              ? const Color(0xFF16A34A)
+                              : const Color(0xFF2563EB),
+                        ),
+                        label: Text(
+                          ocrService.calibrationProfile.isCalibrated
+                              ? 'Calligrafia Calibrata ✓'
+                              : 'Calibra Scrittura (3 Frasi)',
+                        ),
+                      ),
+                    ),
+
+                    const Divider(height: 22),
+
+                    // D. Percentuale di Zoom
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Zoom',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              onPressed: onZoomOut,
+                              icon: const Icon(Icons.remove_circle_outline),
+                            ),
+                            TextButton(
+                              onPressed: onZoomReset,
+                              child: Text(
+                                '${(zoomScale * 100).round()}%',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              onPressed: onZoomIn,
+                              icon: const Icon(Icons.add_circle_outline),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 

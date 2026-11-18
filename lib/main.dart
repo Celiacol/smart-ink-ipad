@@ -61,6 +61,7 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
   late final CommandManager _commandManager;
   late final HandwritingOcrService _ocrService;
   final PdfExportService _pdfExportService = const PdfExportService();
+  final TransformationController _zoomController = TransformationController();
 
   late final PenToolHandler _penTool;
   late final PenToolHandler _highlighterTool;
@@ -112,9 +113,23 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
 
   @override
   void dispose() {
+    _zoomController.dispose();
     _ocrService.dispose();
     _commandManager.dispose();
     super.dispose();
+  }
+
+  void _stepZoom(double factor) {
+    final current = _zoomController.value.clone();
+    final curScale = current.getMaxScaleOnAxis();
+    final nextScale = (curScale * factor).clamp(0.5, 3.0);
+    final ratio = nextScale / curScale;
+    current.scale(ratio);
+    _zoomController.value = current;
+  }
+
+  void _resetZoom() {
+    _zoomController.value = Matrix4.identity();
   }
 
   CanvasToolHandler get _currentToolHandler {
@@ -299,6 +314,10 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
                       _verticalSpaceTool.moveBelowPoint = movesBelow;
                     });
                   },
+                  zoomScale: _zoomController.value.getMaxScaleOnAxis(),
+                  onZoomIn: () => _stepZoom(1.15),
+                  onZoomOut: () => _stepZoom(0.85),
+                  onZoomReset: _resetZoom,
                   onCalibrateHandwriting: _showCalibrationDialog,
                   onExportPdf: () => _pdfExportService.printOrShareDocument(
                     _commandManager.state,
@@ -309,6 +328,7 @@ class _NotebookWorkspaceScreenState extends State<NotebookWorkspaceScreen> {
                     commandManager: _commandManager,
                     activeTool: _currentToolHandler,
                     allowFingerDrawing: _allowFingerDrawing,
+                    zoomController: _zoomController,
                   ),
                 ),
               ],

@@ -22,11 +22,15 @@ class PaginatedNotebookView extends StatefulWidget {
   /// la pagina successiva. Se `true`, anche il dito o il mouse possono scrivere.
   final bool allowFingerDrawing;
 
+  /// Controller opzionale dello zoom per leggere/controllare la percentuale dalla toolbar.
+  final TransformationController? zoomController;
+
   const PaginatedNotebookView({
     super.key,
     required this.commandManager,
     required this.activeTool,
     this.allowFingerDrawing = true,
+    this.zoomController,
   });
 
   @override
@@ -34,7 +38,8 @@ class PaginatedNotebookView extends StatefulWidget {
 }
 
 class _PaginatedNotebookViewState extends State<PaginatedNotebookView> {
-  final TransformationController _zoomController = TransformationController();
+  late final TransformationController _zoomController;
+  late final bool _ownsZoomController;
   late final PullUpUnlockController _unlockController;
 
   /// Pointers touch (dita) attualmente appoggiati sullo schermo (per distinguere 1 dito vs 2 dita Pinch-to-Zoom).
@@ -48,6 +53,8 @@ class _PaginatedNotebookViewState extends State<PaginatedNotebookView> {
   @override
   void initState() {
     super.initState();
+    _ownsZoomController = widget.zoomController == null;
+    _zoomController = widget.zoomController ?? TransformationController();
     _unlockController = PullUpUnlockController(
       onPageUnlocked: _handleUnlockNextPage,
     );
@@ -68,7 +75,9 @@ class _PaginatedNotebookViewState extends State<PaginatedNotebookView> {
   @override
   void dispose() {
     _unlockController.dispose();
-    _zoomController.dispose();
+    if (_ownsZoomController) {
+      _zoomController.dispose();
+    }
     super.dispose();
   }
 

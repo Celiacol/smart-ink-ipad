@@ -305,6 +305,40 @@
       gap: 8px;
       margin-top: 4px;
     }
+
+    /* Menu a tendina compatto a tre lineette (☰) alla sinistra di Esporta PDF */
+    .menu-popover {
+      position: fixed;
+      top: 60px;
+      right: 16px;
+      width: 290px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+      padding: 14px;
+      z-index: 45;
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .menu-popover.open {
+      display: flex;
+    }
+    .menu-section-label {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-bottom: 5px;
+    }
+    .menu-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
   </style>
 </head>
 <body>
@@ -341,40 +375,67 @@
     <div class="divider"></div>
 
     <button class="chip active" id="toggleMergeLineBtn" title="Se attivo, accorpa con spazio singolo il testo sulla stessa riga e va a capo a fine riga. Disattiva per testo libero separato (es. liste/colonne).">🔗 Accorpa Riga: ON</button>
-    <button class="btn" id="openCalibrateBtn" title="Calibra l'app in 3 frasi sulla tua calligrafia (100% locale)">🎯 Calibra</button>
     <button class="chip" id="togglePenOnlyBtn" title="Se attivo, scrive solo con Apple Pencil e usa le dita per scorrere">🖐️ Scrivi: Penna + Dito</button>
-
-    <select id="sizeModeSelect" title="Modalità Dimensione Testo Convertito" style="color: #dc2626; font-weight: 600; border-color: #fca5a5;">
-      <option value="adaptiveSnap" style="color: #dc2626; font-weight: 600;">Dim. 1: Auto-Snap (BETA)</option>
-      <option value="fixedFromToolbar" style="color: #1e293b; font-weight: 500;">Dim. 2: Fissa da Toolbar</option>
-    </select>
-
-    <select id="fixedFontSizeSelect" style="display:none;">
-      <option value="10">10 pt</option>
-      <option value="12">12 pt</option>
-      <option value="14" selected>14 pt</option>
-      <option value="18">18 pt</option>
-      <option value="24">24 pt</option>
-      <option value="28">28 pt</option>
-    </select>
-
-    <div class="divider"></div>
-
-    <button class="btn" id="zoomOutBtn" title="Riduci zoom">➖</button>
-    <button class="btn" id="zoomResetBtn" title="Ripristina zoom 100%">100%</button>
-    <button class="btn" id="zoomInBtn" title="Ingrandisci zoom">➕</button>
 
     <div class="divider"></div>
 
     <button class="btn" id="undoBtn">↩️ Undo</button>
-    <select id="bgTemplateSelect">
-      <option value="ruled">Foglio a Righe</option>
-      <option value="grid">Foglio a Quadretti</option>
-      <option value="dotted">Foglio Puntinato</option>
-      <option value="blank">Foglio Bianco</option>
-    </select>
 
+    <div class="divider"></div>
+
+    <button class="btn" id="hamburgerMenuBtn" title="Opzioni testo, foglio, calibrazione e zoom">☰</button>
     <button class="btn primary" id="exportCleanPdfBtn">📄 Esporta PDF / Stampa</button>
+  </div>
+
+  <!-- Menu a tendina ☰: Dimensione Testo (+ pt), Foglio, Calibrazione e Zoom -->
+  <div class="menu-popover" id="hamburgerMenuPopover">
+    <div>
+      <div class="menu-section-label">Dimensione Testo</div>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <select id="sizeModeSelect" title="Modalità Dimensione Testo Convertito" style="width:100%; color: #dc2626; font-weight: 600; border-color: #fca5a5;">
+          <option value="adaptiveSnap" style="color: #dc2626; font-weight: 600;">Dim. 1: Auto-Snap (BETA)</option>
+          <option value="fixedFromToolbar" style="color: #1e293b; font-weight: 500;">Dim. 2: Fissa da Toolbar</option>
+        </select>
+        <select id="fixedFontSizeSelect" style="display:none; width:100%;">
+          <option value="10">10 pt</option>
+          <option value="12">12 pt</option>
+          <option value="14" selected>14 pt</option>
+          <option value="18">18 pt</option>
+          <option value="24">24 pt</option>
+          <option value="28">28 pt</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="height:1px; background:var(--border);"></div>
+
+    <div>
+      <div class="menu-section-label">Tipo di Foglio A4</div>
+      <select id="bgTemplateSelect" style="width:100%;">
+        <option value="ruled">Foglio a Righe</option>
+        <option value="grid">Foglio a Quadretti</option>
+        <option value="dotted">Foglio Puntinato</option>
+        <option value="blank">Foglio Bianco</option>
+      </select>
+    </div>
+
+    <div style="height:1px; background:var(--border);"></div>
+
+    <div>
+      <div class="menu-section-label">Calibrazione Calligrafia</div>
+      <button class="btn" id="openCalibrateBtn" style="width:100%; justify-content:center;" title="Calibra l'app in 3 frasi sulla tua calligrafia (100% locale)">🎯 Calibra Scrittura</button>
+    </div>
+
+    <div style="height:1px; background:var(--border);"></div>
+
+    <div class="menu-row">
+      <span class="menu-section-label" style="margin:0;">Zoom</span>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button class="btn" id="zoomOutBtn" title="Riduci zoom">➖</button>
+        <button class="btn" id="zoomResetBtn" title="Ripristina zoom 100%">100%</button>
+        <button class="btn" id="zoomInBtn" title="Ingrandisci zoom">➕</button>
+      </div>
+    </div>
   </div>
 
   <!-- Indicatore flottante: non altera MAI la barra degli strumenti -->
@@ -2107,6 +2168,23 @@
     document.getElementById('zoomInBtn').addEventListener('click', () => setZoom(zoomLevel + 0.15));
     zoomResetBtn.addEventListener('click', () => setZoom(1.0));
 
+    // Gestione apertura/chiusura menu a tendina ☰
+    const hamburgerMenuBtn = document.getElementById('hamburgerMenuBtn');
+    const hamburgerMenuPopover = document.getElementById('hamburgerMenuPopover');
+    hamburgerMenuBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      hamburgerMenuPopover.classList.toggle('open');
+    });
+    document.addEventListener('pointerdown', e => {
+      if (
+        hamburgerMenuPopover.classList.contains('open') &&
+        !hamburgerMenuPopover.contains(e.target) &&
+        e.target !== hamburgerMenuBtn
+      ) {
+        hamburgerMenuPopover.classList.remove('open');
+      }
+    });
+
     document.getElementById('sizeModeSelect').addEventListener('change', e => {
       sizeMode = e.target.value;
       const isBetaSnap = sizeMode === 'adaptiveSnap';
@@ -2468,6 +2546,7 @@
     });
 
     document.getElementById('openCalibrateBtn').addEventListener('click', () => {
+      hamburgerMenuPopover.classList.remove('open');
       calIdx = 0;
       calSamples = [];
       calStrokes = [];
